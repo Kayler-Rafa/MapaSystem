@@ -773,10 +773,21 @@ async function buildExportBlob() {
   const vb  = svg.viewBox.baseVal;
   const W   = vb.width  || 1600;
   const H   = vb.height || 1600;
-  svg.setAttribute('width',  W);
-  svg.setAttribute('height', H);
 
-  // Pinta de cinza as quadras marcadas (incluindo fragmentos como path269)
+  // Renderiza em resolução maior para nitidez (SVG é vetorial → escala sem perda).
+  // Teto de ~16M px para não estourar o limite de canvas do iOS Safari.
+  const MAX_DIM    = 3600;
+  const MAX_PIXELS = 16e6;
+  let scale = MAX_DIM / Math.max(W, H);
+  if (W * scale * H * scale > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (W * H));
+  const cw = Math.round(W * scale);
+  const ch = Math.round(H * scale);
+
+  // Define o tamanho de render do SVG (mantém o viewBox) → rasteriza nítido em cw×ch
+  svg.setAttribute('width',  cw);
+  svg.setAttribute('height', ch);
+
+  // Pinta de cinza as quadras marcadas (incluindo fragmentos)
   Object.keys(state.visited).forEach(id => {
     if (!state.visited[id]) return;
     fragmentsOf(id).forEach(realId => {
@@ -792,12 +803,14 @@ async function buildExportBlob() {
   await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
 
   const canvas = document.createElement('canvas');
-  canvas.width  = W;
-  canvas.height = H;
+  canvas.width  = cw;
+  canvas.height = ch;
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, W, H);
-  ctx.drawImage(img, 0, 0, W, H);
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(img, 0, 0, cw, ch);
   URL.revokeObjectURL(url);
 
   return await new Promise(res => canvas.toBlob(res, 'image/png'));
