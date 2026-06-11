@@ -197,7 +197,7 @@
     .t-info { font-size: 0.71rem; color: var(--text-3); }
 
     /* Rodapé */
-    #panel-footer { padding: 10px 14px 14px; border-top: 1px solid var(--border); flex-shrink: 0; }
+    #panel-footer { padding: 10px 14px 14px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
     #btn-reset-map {
       width: 100%; padding: 9px;
       font-size: 0.82rem; font-weight: 600;
@@ -207,6 +207,15 @@
       display: flex; align-items: center; justify-content: center; gap: 6px;
     }
     #btn-reset-map:hover { background: var(--reset-color); color: #fff; border-color: var(--reset-color); }
+    #btn-export-map {
+      width: 100%; padding: 9px;
+      font-size: 0.82rem; font-weight: 600;
+      color: var(--text-2); background: transparent;
+      border: 1.5px solid var(--border); border-radius: 8px;
+      cursor: pointer; transition: all .15s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    #btn-export-map:hover { background: var(--card-hover); color: var(--text-1); }
 
     /* ══ MOBILE ════════════════════════════════════════ */
     @media (max-width: 768px) {
@@ -310,6 +319,7 @@
   </div>
   <div id="territory-list"></div>
   <div id="panel-footer">
+    <button id="btn-export-map">⬇ Exportar mapa em PNG</button>
     <button id="btn-reset-map">↺ Resetar mapa</button>
   </div>
 </div>
@@ -338,12 +348,12 @@ const FIREBASE_CONFIG = {
 //  Territórios
 // ─────────────────────────────────────────────
 const TERRITORIES = [
-  { id: 'layer1', name: 'Território 1', color: '#9966cc', gid: 'g134' },
-  { id: 'layer2', name: 'Território 2', color: '#08beee', gid: 'g110' },
-  { id: 'layer3', name: 'Território 3', color: '#d4a26a', gid: 'g111' },
-  { id: 'layer4', name: 'Território 4', color: '#d1b632', gid: 'g112' },
-  { id: 'layer5', name: 'Território 5', color: '#c93d33', gid: 'g113' },
-  { id: 'layer6', name: 'Território 6', color: '#0fad37', gid: 'g114' },
+  { id: 'layer1', name: 'Ametista',  color: '#9966cc', gid: 'g134' },
+  { id: 'layer2', name: 'Topázio',   color: '#08beee', gid: 'g110' },
+  { id: 'layer3', name: 'Pérola',    color: '#d4a26a', gid: 'g111' },
+  { id: 'layer4', name: 'Crisolito', color: '#d1b632', gid: 'g112' },
+  { id: 'layer5', name: 'Jacinto',   color: '#c93d33', gid: 'g113' },
+  { id: 'layer6', name: 'Esmeralda', color: '#0fad37', gid: 'g114' },
 ];
 
 // ─────────────────────────────────────────────
@@ -353,10 +363,18 @@ const STORE = 'mapa-territorios-v1';
 let state = { visited: {}, names: {} };
 let firebaseRef = null;
 
+function migrateNames(s) {
+  // Limpa nomes no formato antigo "Território N" para que os novos nomes padrão apareçam
+  TERRITORIES.forEach(t => {
+    if (/^Territ[oó]rio\s+\d+$/i.test(s.names?.[t.id] ?? '')) delete s.names[t.id];
+  });
+  return s;
+}
+
 function loadState() {
   try {
     const r = localStorage.getItem(STORE);
-    if (r) state = Object.assign({ visited: {}, names: {} }, JSON.parse(r));
+    if (r) state = migrateNames(Object.assign({ visited: {}, names: {} }, JSON.parse(r)));
   } catch (_) {}
 }
 
@@ -379,7 +397,7 @@ function initFirebase() {
     firebaseRef.on('value', snap => {
       const val = snap.val();
       if (!val) return;
-      state = Object.assign({ visited: {}, names: {} }, val);
+      state = migrateNames(Object.assign({ visited: {}, names: {} }, val));
       applyAllVisited();
       renderSidebar();
       updateStats();
@@ -671,6 +689,52 @@ function renderSidebar() {
 }
 
 // ─────────────────────────────────────────────
+//  Exportar PNG
+// ─────────────────────────────────────────────
+document.getElementById('btn-export-map').addEventListener('click', async () => {
+  const origSvg = document.querySelector('#map-inner svg');
+  if (!origSvg) return;
+
+  const scale  = 2;
+  const vb     = origSvg.viewBox.baseVal;
+  const W      = vb.width  || 750;
+  const H      = vb.height || 1000;
+
+  // Clone e aplica cores inline para os visited (CSS não vai junto no blob)
+  const clone = origSvg.cloneNode(true);
+  clone.setAttribute('width',  W);
+  clone.setAttribute('height', H);
+  clone.querySelectorAll('path.q-block').forEach(p => {
+    if (p.classList.contains('visited')) {
+      p.style.fill        = '#7a7a7a';
+      p.style.fillOpacity = '1';
+    }
+  });
+
+  const xml  = new XMLSerializer().serializeToString(clone);
+  const blob = new Blob([xml], { type: 'image/svg+xml' });
+  const url  = URL.createObjectURL(blob);
+
+  const img = new Image();
+  img.src = url;
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = W * scale;
+  canvas.height = H * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(url);
+
+  const a = document.createElement('a');
+  a.href     = canvas.toDataURL('image/png');
+  a.download = 'mapa-territorios.png';
+  a.click();
+});
+
+// ─────────────────────────────────────────────
 //  Reset
 // ─────────────────────────────────────────────
 document.getElementById('btn-reset-map').addEventListener('click', e => {
@@ -688,7 +752,7 @@ document.getElementById('btn-reset-map').addEventListener('click', e => {
 // ─────────────────────────────────────────────
 async function loadMap() {
   try {
-    const res = await fetch('./Mapa/MapaSem.svg');
+    const res = await fetch('./Mapa/Mapa.svg');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const txt = await res.text();
     const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
