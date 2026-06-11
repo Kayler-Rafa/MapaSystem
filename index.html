@@ -61,11 +61,11 @@
     #map-inner { position: relative; transform-origin: 0 0; will-change: transform; }
     #map-inner svg { display: block; }
 
-    /* Camada visível (Mapa.svg) — mostra ruas e nomes, é onde o cinza aparece */
+    /* Camada visível (Mapa.svg) — mostra ruas e nomes, é onde a marcação aparece */
     #map-inner svg.view-layer { position: relative; pointer-events: none; }
     #map-inner svg.view-layer path { transition: opacity .12s; }
     #map-inner svg.view-layer path.visited {
-      fill: #7a7a7a !important;
+      fill: #ffe600 !important;
       fill-opacity: 1 !important;
     }
     #map-inner svg.view-layer path.hover:not(.visited) { opacity: .72; }
@@ -751,7 +751,7 @@ function renderSidebar() {
 //  Compartilhar / Exportar PNG
 //  Gambiarra: o site usa MapaSem.svg (hitbox limpa), mas a imagem
 //  exportada é gerada a partir do MapaCompleto.svg (com ruas e nomes),
-//  pintando de cinza as mesmas quadras marcadas. Os IDs de quadra
+//  marcando de amarelo as mesmas quadras marcadas. Os IDs de quadra
 //  (path1..path106) são idênticos entre os dois arquivos.
 // ─────────────────────────────────────────────
 let mapaCompletoText = null;
@@ -787,12 +787,12 @@ async function buildExportBlob() {
   svg.setAttribute('width',  cw);
   svg.setAttribute('height', ch);
 
-  // Pinta de cinza as quadras marcadas (incluindo fragmentos)
+  // Marca de amarelo as quadras trabalhadas (incluindo fragmentos)
   Object.keys(state.visited).forEach(id => {
     if (!state.visited[id]) return;
     fragmentsOf(id).forEach(realId => {
       const p = doc.getElementById(realId);
-      if (p) { p.style.fill = '#7a7a7a'; p.style.fillOpacity = '1'; }
+      if (p) { p.style.fill = '#ffe600'; p.style.fillOpacity = '1'; }
     });
   });
 
