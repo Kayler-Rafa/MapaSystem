@@ -58,21 +58,30 @@
     #map-container { position: fixed; inset: 0; background: var(--bg); transition: background .3s; }
     #map-viewport  { position: absolute; inset: 0; cursor: grab; user-select: none; touch-action: none; }
     #map-viewport.dragging { cursor: grabbing; }
-    #map-inner { transform-origin: 0 0; will-change: transform; }
+    #map-inner { position: relative; transform-origin: 0 0; will-change: transform; }
     #map-inner svg { display: block; }
 
-    #map-inner svg path { cursor: default; }
-    #map-inner svg path.q-block { cursor: pointer; transition: opacity .12s; }
-    #map-inner svg path.q-block:hover { opacity: .72; }
-    #map-inner svg path.q-block.visited {
+    /* Camada visível (Mapa.svg) — mostra ruas e nomes, é onde o cinza aparece */
+    #map-inner svg.view-layer { position: relative; pointer-events: none; }
+    #map-inner svg.view-layer path { transition: opacity .12s; }
+    #map-inner svg.view-layer path.visited {
       fill: #7a7a7a !important;
       fill-opacity: 1 !important;
     }
+    #map-inner svg.view-layer path.hover:not(.visited) { opacity: .72; }
+    #map-inner svg.view-layer path.flash { animation: flash .5s ease 2; }
+
+    /* Camada de clique (MapaSem.svg) — invisível por cima, só as quadras captam clique */
+    #map-inner svg.hit-layer {
+      position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0;
+    }
+    #map-inner svg.hit-layer * { pointer-events: none; }
+    #map-inner svg.hit-layer path.q-block { pointer-events: auto; cursor: pointer; }
+
     @keyframes flash {
       0%,100% { stroke: transparent; stroke-width: 0; }
       40%      { stroke: rgba(255,255,255,.9); stroke-width: 4px; }
     }
-    #map-inner svg path.flash { animation: flash .5s ease 2; }
 
     /* ══ TOPBAR FLUTUANTE ══════════════════════════════ */
     #topbar {
@@ -207,15 +216,16 @@
       display: flex; align-items: center; justify-content: center; gap: 6px;
     }
     #btn-reset-map:hover { background: var(--reset-color); color: #fff; border-color: var(--reset-color); }
-    #btn-export-map {
+    #btn-share-map {
       width: 100%; padding: 9px;
       font-size: 0.82rem; font-weight: 600;
-      color: var(--text-2); background: transparent;
-      border: 1.5px solid var(--border); border-radius: 8px;
+      color: #fff; background: var(--spinner-fill);
+      border: 1.5px solid var(--spinner-fill); border-radius: 8px;
       cursor: pointer; transition: all .15s;
       display: flex; align-items: center; justify-content: center; gap: 6px;
     }
-    #btn-export-map:hover { background: var(--card-hover); color: var(--text-1); }
+    #btn-share-map:hover { filter: brightness(1.08); }
+    #btn-share-map:disabled { opacity: .6; cursor: default; }
 
     /* ══ MOBILE ════════════════════════════════════════ */
     @media (max-width: 768px) {
@@ -319,7 +329,7 @@
   </div>
   <div id="territory-list"></div>
   <div id="panel-footer">
-    <button id="btn-export-map">⬇ Exportar mapa em PNG</button>
+    <button id="btn-share-map">📤 Compartilhar mapa</button>
     <button id="btn-reset-map">↺ Resetar mapa</button>
   </div>
 </div>
@@ -363,18 +373,25 @@ const STORE = 'mapa-territorios-v1';
 let state = { visited: {}, names: {} };
 let firebaseRef = null;
 
-function migrateNames(s) {
+function migrateState(s) {
+  if (!s.names)   s.names   = {};
+  if (!s.visited) s.visited = {};
   // Limpa nomes no formato antigo "Território N" para que os novos nomes padrão apareçam
   TERRITORIES.forEach(t => {
-    if (/^Territ[oó]rio\s+\d+$/i.test(s.names?.[t.id] ?? '')) delete s.names[t.id];
+    if (/^Territ[oó]rio\s+\d+$/i.test(s.names[t.id] ?? '')) delete s.names[t.id];
   });
+  // Funde fragmentos antigos (ex: path269) na quadra canônica (path44)
+  for (const [frag, target] of Object.entries(ALIAS)) {
+    if (s.visited[frag]) s.visited[target] = true;
+    delete s.visited[frag];
+  }
   return s;
 }
 
 function loadState() {
   try {
     const r = localStorage.getItem(STORE);
-    if (r) state = migrateNames(Object.assign({ visited: {}, names: {} }, JSON.parse(r)));
+    if (r) state = migrateState(Object.assign({ visited: {}, names: {} }, JSON.parse(r)));
   } catch (_) {}
 }
 
@@ -397,7 +414,7 @@ function initFirebase() {
     firebaseRef.on('value', snap => {
       const val = snap.val();
       if (!val) return;
-      state = migrateNames(Object.assign({ visited: {}, names: {} }, val));
+      state = migrateState(Object.assign({ visited: {}, names: {} }, val));
       applyAllVisited();
       renderSidebar();
       updateStats();
@@ -433,10 +450,8 @@ function toggleTheme() {
 }
 document.getElementById('theme-btn').addEventListener('click', toggleTheme);
 
-// Inicia com tema salvo ou preferência do sistema
-const savedTheme = localStorage.getItem('tema')
-  || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-applyTheme(savedTheme);
+// Inicia com tema salvo; padrão é o modo claro
+applyTheme(localStorage.getItem('tema') || 'light');
 
 // ─────────────────────────────────────────────
 //  Pan & Zoom
@@ -592,43 +607,87 @@ document.getElementById('map-container').addEventListener('click', () => {
 // ─────────────────────────────────────────────
 //  Quadras
 // ─────────────────────────────────────────────
-let svgEl = null;
+let svgView = null;  // Mapa.svg  — camada visível (recebe o cinza)
+let svgHit  = null;  // MapaSem.svg — camada invisível que captura os cliques
 
-function blockPaths(t) {
-  if (!svgEl) return [];
-  const g = svgEl.getElementById(t.gid);
+// Fragmentos que são "uma quadra só" mas no SVG ficaram em paths separados.
+// Chave = id do fragmento, valor = id da quadra canônica (que é contada).
+const ALIAS = { path43: 'path44' };
+const canon = id => ALIAS[id] || id;
+
+// Retorna a quadra canônica + todos os fragmentos que apontam pra ela
+function fragmentsOf(canonId) {
+  const out = [canonId];
+  for (const [frag, target] of Object.entries(ALIAS))
+    if (target === canonId) out.push(frag);
+  return out;
+}
+
+function blockPaths(svg, t) {
+  if (!svg) return [];
+  const g = svg.getElementById(t.gid);
   return g ? Array.from(g.querySelectorAll(':scope > path')) : [];
 }
 function countBlocks(t) {
-  const p = blockPaths(t);
-  return { done: p.filter(x => state.visited[x.id]).length, total: p.length };
+  // Funde fragmentos da mesma quadra (ex: path43 conta junto com path44)
+  const seen = new Set();
+  let done = 0, total = 0;
+  for (const p of blockPaths(svgHit, t)) {
+    const id = canon(p.id);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    total++;
+    if (state.visited[id]) done++;
+  }
+  return { done, total };
 }
 function applyAllVisited() {
-  for (const t of TERRITORIES)
-    for (const p of blockPaths(t))
-      p.classList.toggle('visited', !!state.visited[p.id]);
+  if (!svgView) return;
+  svgView.querySelectorAll('path.visited').forEach(p => p.classList.remove('visited'));
+  for (const id in state.visited) {
+    if (!state.visited[id]) continue;
+    fragmentsOf(id).forEach(realId => {
+      const p = svgView.getElementById(realId);
+      if (p) p.classList.add('visited');
+    });
+  }
+}
+function setHover(canonId, on) {
+  if (!svgView) return;
+  fragmentsOf(canonId).forEach(realId => {
+    const p = svgView.getElementById(realId);
+    if (p) p.classList.toggle('hover', on);
+  });
 }
 function setupBlockClicks() {
-  for (const t of TERRITORIES) {
-    for (const p of blockPaths(t)) {
-      p.classList.add('q-block');
-      p.addEventListener('pointerdown', () => { dragMoved = false; });
-      p.addEventListener('click', e => {
-        e.stopPropagation();
-        if (dragMoved) return;
-        state.visited[p.id] = !state.visited[p.id];
-        p.classList.toggle('visited', !!state.visited[p.id]);
-        saveState();
-        renderSidebar();
-        updateStats();
-      });
-    }
+  // Quadras (filhas diretas dos grupos) + fragmentos (ALIAS); Set evita duplicar
+  const clickable = new Set();
+  for (const t of TERRITORIES) blockPaths(svgHit, t).forEach(p => clickable.add(p));
+  for (const frag of Object.keys(ALIAS)) {
+    const p = svgHit.getElementById(frag);
+    if (p) clickable.add(p);
+  }
+  for (const p of clickable) {
+    p.classList.add('q-block');
+    p.addEventListener('pointerdown', () => { dragMoved = false; });
+    p.addEventListener('mouseenter', () => setHover(canon(p.id), true));
+    p.addEventListener('mouseleave', () => setHover(canon(p.id), false));
+    p.addEventListener('click', e => {
+      e.stopPropagation();
+      if (dragMoved) return;
+      const id = canon(p.id);
+      state.visited[id] = !state.visited[id];
+      applyAllVisited();
+      saveState();
+      renderSidebar();
+      updateStats();
+    });
   }
 }
 function flashTerritory(t) {
-  blockPaths(t).forEach(p => {
+  blockPaths(svgView, t).forEach(p => {
     p.classList.remove('flash');
-    void p.offsetWidth;
+    void p.getBoundingClientRect().width;
     p.classList.add('flash');
     setTimeout(() => p.classList.remove('flash'), 1100);
   });
@@ -689,49 +748,88 @@ function renderSidebar() {
 }
 
 // ─────────────────────────────────────────────
-//  Exportar PNG
+//  Compartilhar / Exportar PNG
+//  Gambiarra: o site usa MapaSem.svg (hitbox limpa), mas a imagem
+//  exportada é gerada a partir do MapaCompleto.svg (com ruas e nomes),
+//  pintando de cinza as mesmas quadras marcadas. Os IDs de quadra
+//  (path1..path106) são idênticos entre os dois arquivos.
 // ─────────────────────────────────────────────
-document.getElementById('btn-export-map').addEventListener('click', async () => {
-  const origSvg = document.querySelector('#map-inner svg');
-  if (!origSvg) return;
+let mapaCompletoText = null;
 
-  const scale  = 2;
-  const vb     = origSvg.viewBox.baseVal;
-  const W      = vb.width  || 750;
-  const H      = vb.height || 1000;
+async function preloadExportMap() {
+  try {
+    const res = await fetch('./Mapa/MapaCompleto.svg');
+    if (res.ok) mapaCompletoText = await res.text();
+  } catch (_) {}
+}
 
-  // Clone e aplica cores inline para os visited (CSS não vai junto no blob)
-  const clone = origSvg.cloneNode(true);
-  clone.setAttribute('width',  W);
-  clone.setAttribute('height', H);
-  clone.querySelectorAll('path.q-block').forEach(p => {
-    if (p.classList.contains('visited')) {
-      p.style.fill        = '#7a7a7a';
-      p.style.fillOpacity = '1';
-    }
+async function buildExportBlob() {
+  if (!mapaCompletoText) {
+    const res = await fetch('./Mapa/MapaCompleto.svg');
+    mapaCompletoText = await res.text();
+  }
+  const doc = new DOMParser().parseFromString(mapaCompletoText, 'image/svg+xml');
+  const svg = doc.querySelector('svg');
+  const vb  = svg.viewBox.baseVal;
+  const W   = vb.width  || 1600;
+  const H   = vb.height || 1600;
+  svg.setAttribute('width',  W);
+  svg.setAttribute('height', H);
+
+  // Pinta de cinza as quadras marcadas (incluindo fragmentos como path269)
+  Object.keys(state.visited).forEach(id => {
+    if (!state.visited[id]) return;
+    fragmentsOf(id).forEach(realId => {
+      const p = doc.getElementById(realId);
+      if (p) { p.style.fill = '#7a7a7a'; p.style.fillOpacity = '1'; }
+    });
   });
 
-  const xml  = new XMLSerializer().serializeToString(clone);
-  const blob = new Blob([xml], { type: 'image/svg+xml' });
-  const url  = URL.createObjectURL(blob);
-
+  const xml = new XMLSerializer().serializeToString(svg);
+  const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
   const img = new Image();
   img.src = url;
   await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
 
   const canvas = document.createElement('canvas');
-  canvas.width  = W * scale;
-  canvas.height = H * scale;
+  canvas.width  = W;
+  canvas.height = H;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(img, 0, 0, W, H);
   URL.revokeObjectURL(url);
 
-  const a = document.createElement('a');
-  a.href     = canvas.toDataURL('image/png');
-  a.download = 'mapa-territorios.png';
-  a.click();
+  return await new Promise(res => canvas.toBlob(res, 'image/png'));
+}
+
+document.getElementById('btn-share-map').addEventListener('click', async () => {
+  const btn  = document.getElementById('btn-share-map');
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = '⏳ Gerando imagem...';
+  try {
+    const blob = await buildExportBlob();
+    const file = new File([blob], 'mapa-territorios.png', { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Mapa de Territórios' });
+    } else {
+      const a = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = 'mapa-territorios.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {   // AbortError = usuário cancelou o share
+      console.error(e);
+      alert('Não foi possível gerar a imagem.');
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
 });
 
 // ─────────────────────────────────────────────
@@ -750,19 +848,32 @@ document.getElementById('btn-reset-map').addEventListener('click', e => {
 // ─────────────────────────────────────────────
 //  Carregamento do SVG
 // ─────────────────────────────────────────────
+function parseSvg(txt) {
+  const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) throw new Error('SVG parse error');
+  const svg = doc.querySelector('svg');
+  svg.removeAttribute('width');
+  svg.removeAttribute('height');
+  svg.style.display = 'block';
+  return svg;
+}
+
 async function loadMap() {
   try {
-    const res = await fetch('./Mapa/Mapa.svg');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const txt = await res.text();
-    const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
-    if (doc.querySelector('parsererror')) throw new Error('SVG parse error');
+    const [viewTxt, hitTxt] = await Promise.all([
+      fetch('./Mapa/Mapa.svg').then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }),
+      fetch('./Mapa/MapaSem.svg').then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }),
+    ]);
 
-    svgEl = doc.querySelector('svg');
-    svgEl.removeAttribute('width');
-    svgEl.removeAttribute('height');
-    svgEl.style.display = 'block';
-    inner.appendChild(svgEl);
+    svgView = parseSvg(viewTxt);
+    svgHit  = parseSvg(hitTxt);
+    svgView.classList.add('view-layer');
+    svgHit.classList.add('hit-layer');
+    // A camada de clique é invisível: remove textos/decorações para aliviar a
+    // renderização (não afetam o hit-test das quadras, que são <path>).
+    svgHit.querySelectorAll('text, tspan, ellipse, image').forEach(el => el.remove());
+    inner.appendChild(svgView);  // visível embaixo
+    inner.appendChild(svgHit);   // invisível por cima
 
     setupBlockClicks();
     applyAllVisited();
@@ -770,7 +881,7 @@ async function loadMap() {
     updateStats();
 
     document.getElementById('loading').style.display = 'none';
-    requestAnimationFrame(() => fitSvg(svgEl));
+    requestAnimationFrame(() => fitSvg(svgView));
   } catch (e) {
     console.error(e);
     document.getElementById('loading').style.display = 'none';
@@ -784,6 +895,7 @@ async function loadMap() {
 loadState();
 initFirebase();
 loadMap();
+preloadExportMap();
 </script>
 </body>
 </html>
