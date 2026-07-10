@@ -278,15 +278,6 @@
 
     /* Rodapé */
     #panel-footer { padding: 10px 14px 14px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
-    #btn-reset-map {
-      width: 100%; padding: 9px;
-      font-size: 0.82rem; font-weight: 600;
-      color: var(--reset-color); background: var(--reset-bg);
-      border: 1.5px solid var(--reset-border); border-radius: 10px;
-      cursor: pointer; transition: all .15s;
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-    }
-    #btn-reset-map:hover { background: var(--reset-color); color: #fff; border-color: var(--reset-color); }
     #btn-share-map {
       width: 100%; padding: 9px;
       font-size: 0.82rem; font-weight: 600;
@@ -408,7 +399,6 @@
   <div id="territory-list"></div>
   <div id="panel-footer">
     <button id="btn-share-map">📤 Compartilhar mapa</button>
-    <button id="btn-reset-map">↺ Resetar mapa</button>
   </div>
 </div>
 
@@ -1182,20 +1172,6 @@ document.getElementById('btn-share-map').addEventListener('click', async () => {
     btn.disabled    = false;
     btn.textContent = orig;
   }
-});
-
-// ─────────────────────────────────────────────
-//  Reset
-// ─────────────────────────────────────────────
-document.getElementById('btn-reset-map').addEventListener('click', e => {
-  e.stopPropagation();
-  if (!confirm('Resetar o mapa? Todas as quadras voltarão a ter cor.')) return;
-  state.visited = {};
-  clearSelection();
-  saveState();
-  applyAllVisited();
-  renderSidebar();
-  updateStats();
 });
 
 // ─────────────────────────────────────────────

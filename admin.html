@@ -19,6 +19,9 @@
     --text-3:     #94a3b8;
     --accent:     #3b82f6;
     --row-hover:  #f8fafc;
+    --reset-bg:     #fef2f2;
+    --reset-border: #fca5a5;
+    --reset-color:  #dc2626;
   }
   [data-theme="dark"] {
     --bg:         #0d1520;
@@ -29,6 +32,9 @@
     --text-3:     #4e6782;
     --accent:     #60a5fa;
     --row-hover:  #1e2d40;
+    --reset-bg:     rgba(220,38,38,.15);
+    --reset-border: rgba(220,38,38,.4);
+    --reset-color:  #f87171;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -61,6 +67,15 @@
   }
   .empty, .loading { text-align: center; padding: 40px 20px; color: var(--text-2); font-size: 0.9rem; }
   .table-scroll { overflow-x: auto; }
+  .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #btn-reset-map {
+    padding: 7px 14px; font-size: 0.78rem; font-weight: 600; white-space: nowrap;
+    color: var(--reset-color); background: var(--reset-bg);
+    border: 1.5px solid var(--reset-border); border-radius: 8px;
+    cursor: pointer; transition: all .15s;
+  }
+  #btn-reset-map:hover { background: var(--reset-color); color: #fff; border-color: var(--reset-color); }
+  #btn-reset-map:disabled { opacity: .6; cursor: default; }
   @media (max-width: 640px) {
     th, td { padding: 9px 10px; font-size: 0.78rem; }
   }
@@ -70,7 +85,10 @@
 <div class="wrap">
   <header>
     <h1>📋 Histórico de Visitas</h1>
-    <div class="summary" id="summary">Carregando…</div>
+    <div class="header-right">
+      <div class="summary" id="summary">Carregando…</div>
+      <button id="btn-reset-map">↺ Resetar mapa</button>
+    </div>
   </header>
 
   <div class="card">
@@ -105,7 +123,8 @@ const FIREBASE_CONFIG = {
   appId: "1:4497521251:web:ed3da5b33d73f98cc79656"
 };
 
-const LOG_STORE = 'mapa-visitas-v1'; // fallback local, mesmo nome usado no index.html
+const LOG_STORE   = 'mapa-visitas-v1';    // fallback local, mesmo nome usado no index.html
+const STATE_STORE = 'mapa-territorios-v1'; // idem, para o estado (quadras marcadas)
 
 // Modo escuro automático pela preferência do sistema
 if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -167,6 +186,36 @@ function render(records) {
 
   table.style.display = 'table';
 }
+
+// Reseta o mapa (limpa as quadras marcadas), preservando nomes de território.
+// Não afeta o histórico de visitas acima — são caminhos separados no banco.
+document.getElementById('btn-reset-map').addEventListener('click', async () => {
+  if (!confirm('Resetar o mapa? Todas as quadras voltarão a ter cor.')) return;
+  const btn  = document.getElementById('btn-reset-map');
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = 'Resetando...';
+  try {
+    if (FIREBASE_CONFIG) {
+      const estadoRef = firebase.database().ref('estado');
+      const snap = await estadoRef.once('value');
+      const cur  = snap.val() || {};
+      await estadoRef.set({ visited: {}, names: cur.names || {} });
+    } else {
+      try {
+        const raw = localStorage.getItem(STATE_STORE);
+        const cur = raw ? JSON.parse(raw) : {};
+        localStorage.setItem(STATE_STORE, JSON.stringify({ visited: {}, names: cur.names || {} }));
+      } catch (_) {}
+    }
+  } catch (e) {
+    console.error(e);
+    alert('Não foi possível resetar o mapa.');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
+});
 
 function loadFromLocalStorage() {
   try {
