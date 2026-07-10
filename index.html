@@ -796,6 +796,89 @@ function flashTerritory(t) {
 }
 
 // ─────────────────────────────────────────────
+//  Rótulos das quadras (ex: "19A") — associa cada <path> ao <text>
+//  que está posicionado dentro dele, usando geometria SVG.
+// ─────────────────────────────────────────────
+let blockLabels = {};
+
+function buildLabelMap(svg) {
+  const paths = Array.from(svg.querySelectorAll('path[id]'));
+  const byId  = {};
+  paths.forEach(p => { byId[p.id] = p; });
+
+  // Só considera textos no formato "19A" (número + letra) — o SVG também tem
+  // marcadores numerados isolados (ex: "①") que não são códigos de quadra.
+  const texts = Array.from(svg.querySelectorAll('text'))
+    .filter(t => /^\d+[A-Za-z]+$/.test((t.textContent || '').trim()));
+
+  // Centro de cada texto, convertido para o espaço de coordenadas raiz do SVG
+  const textPoints = texts.map(t => {
+    const bbox = t.getBBox();
+    const pt = svg.createSVGPoint();
+    pt.x = bbox.x + bbox.width / 2;
+    pt.y = bbox.y + bbox.height / 2;
+    return { label: (t.textContent || '').trim(), pt: pt.matrixTransform(t.getCTM()) };
+  });
+
+  function containedLabel(p) {
+    let ctm;
+    try { ctm = p.getCTM().inverse(); } catch (_) { return null; }
+    for (const tp of textPoints) {
+      const local = tp.pt.matrixTransform(ctm);
+      if (p.isPointInFill(local)) return tp.label;
+    }
+    return null;
+  }
+  function nearestLabel(p) {
+    if (!textPoints.length) return null;
+    const bbox = p.getBBox();
+    const centerPt = svg.createSVGPoint();
+    centerPt.x = bbox.x + bbox.width / 2;
+    centerPt.y = bbox.y + bbox.height / 2;
+    const centerRoot = centerPt.matrixTransform(p.getCTM());
+    let best = null, bestDist = Infinity;
+    for (const tp of textPoints) {
+      const dx = tp.pt.x - centerRoot.x, dy = tp.pt.y - centerRoot.y;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) { bestDist = d; best = tp.label; }
+    }
+    return best;
+  }
+
+  // Agrupa por id canônico: quadras fundidas (ex: path43+path44) usam o
+  // rótulo de QUALQUER um dos fragmentos que contiver o texto — o fragmento
+  // "extra" costuma ser pequeno e nem sempre encerra o texto no seu fill.
+  const map = {};
+  const canonIds = new Set(paths.map(p => canon(p.id)));
+  for (const cid of canonIds) {
+    const fragIds = fragmentsOf(cid).filter(fid => byId[fid]);
+    let label = null;
+    for (const fid of fragIds) {
+      label = containedLabel(byId[fid]);
+      if (label) break;
+    }
+    if (!label && fragIds.length) label = nearestLabel(byId[fragIds[0]]);
+    if (label) map[cid] = label;
+  }
+  return map;
+}
+function labelOf(id) {
+  return blockLabels[id] || id;
+}
+function compareLabels(a, b) {
+  const pa = a.match(/^(\d+)(.*)$/), pb = b.match(/^(\d+)(.*)$/);
+  if (pa && pb) {
+    const diff = parseInt(pa[1], 10) - parseInt(pb[1], 10);
+    return diff !== 0 ? diff : pa[2].localeCompare(pb[2]);
+  }
+  return a.localeCompare(b);
+}
+function joinWithE(arr) {
+  if (arr.length <= 1) return arr.join('');
+  return arr.slice(0, -1).join(', ') + ' e ' + arr[arr.length - 1];
+}
+
+// ─────────────────────────────────────────────
 //  Seleção & confirmação (nome + data da visita)
 //  Clicar marca a quadra de azul (seleção); só vira cinza de fato
 //  quando o usuário confirma no modal com nome + data. Cada confirmação
@@ -855,10 +938,9 @@ const confirmSubmit  = document.getElementById('confirm-submit');
 
 function openConfirmModal() {
   if (selection.size === 0) return;
-  const breakdown = territoryBreakdown([...selection]);
-  const lines = Object.entries(breakdown).map(([name, n]) => `<b>${n}</b> em ${escHtml(name)}`);
   const n = selection.size;
-  confirmSummary.innerHTML = `${n} quadra${n > 1 ? 's' : ''} selecionada${n > 1 ? 's' : ''}: ${lines.join(', ')}`;
+  const labels = [...selection].map(labelOf).sort(compareLabels);
+  confirmSummary.innerHTML = `${n} quadra${n > 1 ? 's' : ''} selecionada${n > 1 ? 's' : ''}: <b>${escHtml(joinWithE(labels))}</b>`;
   confirmName.value = '';
   confirmDate.value = new Date().toISOString().slice(0, 10);
   confirmOverlay.classList.add('show');
@@ -1122,6 +1204,7 @@ async function loadMap() {
     inner.appendChild(svgView);  // visível embaixo
     inner.appendChild(svgHit);   // invisível por cima
 
+    blockLabels = buildLabelMap(svgView);
     setupBlockClicks();
     applyAllVisited();
     renderSidebar();
