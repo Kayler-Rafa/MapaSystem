@@ -1017,6 +1017,7 @@ confirmSubmit.addEventListener('click', async () => {
       timestamp: Date.now(),
       totalQuadras: ids.length,
       quadras: ids,
+      quadraLabels: ids.map(labelOf).sort(compareLabels),
       porTerritorio: territoryBreakdown(ids),
     });
 
