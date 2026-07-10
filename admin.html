@@ -87,6 +87,40 @@
   @media (max-width: 640px) {
     th, td { padding: 9px 10px; font-size: 0.78rem; }
   }
+
+  /* ══ MAPA DE CORREÇÃO LIVRE ══════════════════════════ */
+  .map-card-head { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .map-card-head h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 3px; }
+  .map-card-head p { font-size: 0.78rem; color: var(--text-2); }
+  #admin-map-viewport {
+    position: relative; height: 520px; overflow: hidden;
+    cursor: grab; touch-action: none; background: var(--bg);
+  }
+  #admin-map-viewport.dragging { cursor: grabbing; }
+  #admin-map-inner { position: relative; transform-origin: 0 0; }
+  #admin-map-inner svg { display: block; }
+  #admin-map-inner svg.view-layer path { transition: opacity .12s; }
+  #admin-map-inner svg.view-layer path.visited { fill: #7a7a7a !important; fill-opacity: 1 !important; }
+  #admin-map-inner svg.view-layer path.hover:not(.visited) { opacity: .72; }
+  #admin-map-inner svg.hit-layer { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+  #admin-map-inner svg.hit-layer * { pointer-events: none; }
+  #admin-map-inner svg.hit-layer path.q-block { pointer-events: auto; cursor: pointer; }
+  #admin-zoom-bar { position: absolute; left: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 5px; z-index: 5; }
+  .admin-z-btn {
+    width: 38px; height: 38px; background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.12); cursor: pointer;
+    font-size: 1.05rem; font-weight: 700; color: var(--text-1);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .admin-z-btn:hover { opacity: .85; }
+  #admin-map-loading, #admin-map-err {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--text-2); font-size: 0.85rem; text-align: center; padding: 20px;
+  }
+  #admin-map-err { display: none; color: var(--reset-color); }
+  @media (max-width: 640px) {
+    #admin-map-viewport { height: 400px; }
+  }
 </style>
 </head>
 <body>
@@ -98,6 +132,23 @@
       <button id="btn-reset-map">↺ Resetar mapa</button>
     </div>
   </header>
+
+  <div class="card">
+    <div class="map-card-head">
+      <h2>🗺️ Mapa (edição livre)</h2>
+      <p>Clique numa quadra pra marcar ou desmarcar diretamente, sem passar pelo histórico.</p>
+    </div>
+    <div id="admin-map-viewport">
+      <div id="admin-map-inner"></div>
+      <div id="admin-zoom-bar">
+        <button class="admin-z-btn" id="admin-z-in"  title="Ampliar">+</button>
+        <button class="admin-z-btn" id="admin-z-out" title="Reduzir">−</button>
+        <button class="admin-z-btn" id="admin-z-fit" title="Ajustar">⌂</button>
+      </div>
+      <div id="admin-map-loading">Carregando mapa…</div>
+      <div id="admin-map-err">Erro ao carregar o mapa. Confira se os arquivos estão em ./Mapa/.</div>
+    </div>
+  </div>
 
   <div class="card">
     <div class="table-scroll">
@@ -135,10 +186,209 @@ const FIREBASE_CONFIG = {
 const LOG_STORE   = 'mapa-visitas-v1';    // fallback local, mesmo nome usado no index.html
 const STATE_STORE = 'mapa-territorios-v1'; // idem, para o estado (quadras marcadas)
 
+// Estado do mapa (quadras marcadas + nomes de território), compartilhado
+// entre o card de reset e o mapa de edição livre abaixo. Fica sincronizado
+// em tempo real com o Firebase 'estado' — o mesmo caminho usado no index.html.
+let mapState  = { visited: {}, names: {} };
+let estadoRef = null;
+
+function saveMapState() {
+  if (estadoRef) return estadoRef.set(mapState);
+  try { localStorage.setItem(STATE_STORE, JSON.stringify(mapState)); } catch (_) {}
+  return Promise.resolve();
+}
+function loadMapStateFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(STATE_STORE);
+    mapState = raw ? Object.assign({ visited: {}, names: {} }, JSON.parse(raw)) : { visited: {}, names: {} };
+  } catch (_) {
+    mapState = { visited: {}, names: {} };
+  }
+  if (window.__adminMap) window.__adminMap.applyAllVisited();
+}
+
 // Modo escuro automático pela preferência do sistema
 if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
   document.documentElement.setAttribute('data-theme', 'dark');
 }
+
+// ─────────────────────────────────────────────
+//  Mapa de edição livre — igual ao mapa principal (mesmas camadas e
+//  fusão de quadras), mas o clique alterna marcado/desmarcado na hora,
+//  sem seleção nem confirmação.
+// ─────────────────────────────────────────────
+(function initAdminMap() {
+  const viewport = document.getElementById('admin-map-viewport');
+  const inner    = document.getElementById('admin-map-inner');
+  const GIDS     = ['g134', 'g110', 'g111', 'g112', 'g113', 'g114'];
+  const ALIAS    = { path43: 'path44' };
+  const canon    = id => ALIAS[id] || id;
+
+  let tx = 0, ty = 0, sc = 1;
+  let panning = false, panStart = null, dragMoved = false;
+  let svgView = null, svgHit = null;
+
+  function fragmentsOf(cid) {
+    const out = [cid];
+    for (const [frag, target] of Object.entries(ALIAS)) if (target === cid) out.push(frag);
+    return out;
+  }
+  function applyTx() { inner.style.transform = `translate(${tx}px,${ty}px) scale(${sc})`; }
+  function fitSvg(svg) {
+    const vr = viewport.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const sw = vb.width || 750, sh = vb.height || 1000;
+    sc = Math.min(vr.width / sw, vr.height / sh) * 0.95;
+    tx = (vr.width - sw * sc) / 2;
+    ty = (vr.height - sh * sc) / 2;
+    applyTx();
+  }
+  function zoomAt(f, cx, cy) {
+    const ns = Math.max(0.12, Math.min(12, sc * f));
+    tx = cx - (cx - tx) * (ns / sc);
+    ty = cy - (cy - ty) * (ns / sc);
+    sc = ns; applyTx();
+  }
+
+  viewport.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    panning = true; dragMoved = false;
+    panStart = { ox: e.clientX - tx, oy: e.clientY - ty };
+    viewport.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', e => {
+    if (!panning) return;
+    const nx = e.clientX - panStart.ox, ny = e.clientY - panStart.oy;
+    if (Math.abs(nx - tx) + Math.abs(ny - ty) > 5) dragMoved = true;
+    tx = nx; ty = ny; applyTx();
+  });
+  window.addEventListener('mouseup', () => {
+    panning = false; viewport.classList.remove('dragging');
+  });
+  viewport.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = viewport.getBoundingClientRect();
+    zoomAt(e.deltaY < 0 ? 1.12 : 0.89, e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+
+  let prevT = null, prevD = 0;
+  viewport.addEventListener('touchstart', e => {
+    dragMoved = false;
+    prevT = [...e.touches].map(t => ({ x: t.clientX, y: t.clientY }));
+    if (e.touches.length === 2)
+      prevD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+  }, { passive: true });
+  viewport.addEventListener('touchmove', e => {
+    if (!prevT) return;
+    if (e.touches.length === 1 && prevT.length === 1) {
+      const dx = e.touches[0].clientX - prevT[0].x;
+      const dy = e.touches[0].clientY - prevT[0].y;
+      if (Math.abs(dx) + Math.abs(dy) > 5) dragMoved = true;
+      tx += dx; ty += dy; applyTx();
+      prevT = [{ x: e.touches[0].clientX, y: e.touches[0].clientY }];
+    } else if (e.touches.length === 2) {
+      dragMoved = true;
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                           e.touches[0].clientY - e.touches[1].clientY);
+      const r = viewport.getBoundingClientRect();
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
+      if (prevD) zoomAt(d / prevD, cx, cy);
+      prevD = d;
+      prevT = [...e.touches].map(t => ({ x: t.clientX, y: t.clientY }));
+    }
+  }, { passive: true });
+  viewport.addEventListener('touchend', () => { prevT = null; });
+
+  document.getElementById('admin-z-in').onclick  = () => { const r = viewport.getBoundingClientRect(); zoomAt(1.3,   r.width / 2, r.height / 2); };
+  document.getElementById('admin-z-out').onclick = () => { const r = viewport.getBoundingClientRect(); zoomAt(1 / 1.3, r.width / 2, r.height / 2); };
+  document.getElementById('admin-z-fit').onclick = () => { if (svgView) fitSvg(svgView); };
+
+  function blockPaths(svg, gid) {
+    const g = svg.getElementById(gid);
+    return g ? Array.from(g.querySelectorAll(':scope > path')) : [];
+  }
+  function applyAllVisited() {
+    if (!svgView) return;
+    svgView.querySelectorAll('path.visited').forEach(p => p.classList.remove('visited'));
+    for (const id in mapState.visited) {
+      if (!mapState.visited[id]) continue;
+      fragmentsOf(id).forEach(realId => {
+        const p = svgView.getElementById(realId);
+        if (p) p.classList.add('visited');
+      });
+    }
+  }
+  function setHover(cid, on) {
+    fragmentsOf(cid).forEach(realId => {
+      const p = svgView.getElementById(realId);
+      if (p) p.classList.toggle('hover', on);
+    });
+  }
+  function setupClicks() {
+    const clickable = new Set();
+    GIDS.forEach(gid => blockPaths(svgHit, gid).forEach(p => clickable.add(p)));
+    Object.keys(ALIAS).forEach(frag => {
+      const p = svgHit.getElementById(frag);
+      if (p) clickable.add(p);
+    });
+    clickable.forEach(p => {
+      p.classList.add('q-block');
+      p.addEventListener('pointerdown', () => { dragMoved = false; });
+      p.addEventListener('mouseenter', () => setHover(canon(p.id), true));
+      p.addEventListener('mouseleave', () => setHover(canon(p.id), false));
+      p.addEventListener('click', e => {
+        e.stopPropagation();
+        if (dragMoved) return;
+        const id = canon(p.id);
+        if (mapState.visited[id]) delete mapState.visited[id];
+        else mapState.visited[id] = true;
+        applyAllVisited();
+        saveMapState();
+      });
+    });
+  }
+
+  function parseSvg(txt) {
+    const doc = new DOMParser().parseFromString(txt, 'image/svg+xml');
+    if (doc.querySelector('parsererror')) throw new Error('SVG parse error');
+    const svg = doc.querySelector('svg');
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    svg.style.display = 'block';
+    return svg;
+  }
+
+  async function loadAdminMap() {
+    try {
+      const [viewTxt, hitTxt] = await Promise.all([
+        fetch('./Mapa/Mapa.svg').then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }),
+        fetch('./Mapa/MapaSem.svg').then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }),
+      ]);
+      svgView = parseSvg(viewTxt);
+      svgHit  = parseSvg(hitTxt);
+      svgView.classList.add('view-layer');
+      svgHit.classList.add('hit-layer');
+      svgHit.querySelectorAll('text, tspan, ellipse, image').forEach(el => el.remove());
+      inner.appendChild(svgView);
+      inner.appendChild(svgHit);
+
+      setupClicks();
+      applyAllVisited();
+
+      document.getElementById('admin-map-loading').style.display = 'none';
+      requestAnimationFrame(() => fitSvg(svgView));
+    } catch (e) {
+      console.error(e);
+      document.getElementById('admin-map-loading').style.display = 'none';
+      document.getElementById('admin-map-err').style.display = 'flex';
+    }
+  }
+
+  window.__adminMap = { applyAllVisited };
+  loadAdminMap();
+})();
 
 function fmtDate(isoDate) {
   if (!isoDate) return '—';
@@ -206,18 +456,9 @@ document.getElementById('btn-reset-map').addEventListener('click', async () => {
   btn.disabled    = true;
   btn.textContent = 'Resetando...';
   try {
-    if (FIREBASE_CONFIG) {
-      const estadoRef = firebase.database().ref('estado');
-      const snap = await estadoRef.once('value');
-      const cur  = snap.val() || {};
-      await estadoRef.set({ visited: {}, names: cur.names || {} });
-    } else {
-      try {
-        const raw = localStorage.getItem(STATE_STORE);
-        const cur = raw ? JSON.parse(raw) : {};
-        localStorage.setItem(STATE_STORE, JSON.stringify({ visited: {}, names: cur.names || {} }));
-      } catch (_) {}
-    }
+    mapState.visited = {};
+    if (window.__adminMap) window.__adminMap.applyAllVisited();
+    await saveMapState();
   } catch (e) {
     console.error(e);
     alert('Não foi possível resetar o mapa.');
@@ -271,6 +512,7 @@ document.getElementById('log-body').addEventListener('click', e => {
 if (FIREBASE_CONFIG) {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
+
     const ref = firebase.database().ref('visitas');
     ref.on('value', snap => {
       const val = snap.val() || {};
@@ -279,12 +521,24 @@ if (FIREBASE_CONFIG) {
       console.error(err);
       loadFromLocalStorage();
     });
+
+    estadoRef = firebase.database().ref('estado');
+    estadoRef.on('value', snap => {
+      const val = snap.val() || {};
+      mapState = Object.assign({ visited: {}, names: {} }, val);
+      if (window.__adminMap) window.__adminMap.applyAllVisited();
+    }, err => {
+      console.error(err);
+      loadMapStateFromLocalStorage();
+    });
   } catch (e) {
     console.error(e);
     loadFromLocalStorage();
+    loadMapStateFromLocalStorage();
   }
 } else {
   loadFromLocalStorage();
+  loadMapStateFromLocalStorage();
 }
 </script>
 </body>

@@ -762,16 +762,10 @@ function setupBlockClicks() {
       e.stopPropagation();
       if (dragMoved) return;
       const id = canon(p.id);
-      if (state.visited[id]) {
-        // Já marcada → desmarcar continua instantâneo, sem confirmação
-        delete state.visited[id];
-        applyAllVisited();
-        saveState();
-        renderSidebar();
-        updateStats();
-      } else {
-        toggleSelection(id);
-      }
+      // Desmarcar foi desativado na página principal — só é possível pelo
+      // mapa de correção livre no admin.html.
+      if (state.visited[id]) return;
+      toggleSelection(id);
     });
   }
 }
