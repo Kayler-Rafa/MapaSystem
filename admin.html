@@ -76,6 +76,14 @@
   }
   #btn-reset-map:hover { background: var(--reset-color); color: #fff; border-color: var(--reset-color); }
   #btn-reset-map:disabled { opacity: .6; cursor: default; }
+  .btn-delete {
+    background: transparent; border: none; cursor: pointer;
+    font-size: 0.95rem; padding: 4px 6px; border-radius: 6px;
+    line-height: 1; transition: background .12s, opacity .12s;
+  }
+  .btn-delete:hover { background: var(--reset-bg); }
+  .btn-delete:disabled { opacity: .4; cursor: default; }
+  th.acoes, td.acoes { text-align: right; }
   @media (max-width: 640px) {
     th, td { padding: 9px 10px; font-size: 0.78rem; }
   }
@@ -101,6 +109,7 @@
             <th>Qtd</th>
             <th class="quadras-marcadas">Quadras marcadas</th>
             <th>Confirmado em</th>
+            <th class="acoes"></th>
           </tr>
         </thead>
         <tbody id="log-body"></tbody>
@@ -180,6 +189,7 @@ function render(records) {
         <td><span class="count-badge">${n}</span></td>
         <td class="quadras-marcadas">${blockTags}</td>
         <td>${fmtTimestamp(r.timestamp)}</td>
+        <td class="acoes"><button class="btn-delete" data-key="${escHtml(r._key)}" title="Excluir registro">🗑️</button></td>
       </tr>
     `;
   }).join('');
@@ -217,14 +227,46 @@ document.getElementById('btn-reset-map').addEventListener('click', async () => {
   }
 });
 
+// _key identifica o registro pra exclusão: a chave real do Firebase, ou o
+// índice no array (como string) quando usando o fallback local.
 function loadFromLocalStorage() {
   try {
     const raw = localStorage.getItem(LOG_STORE);
-    render(raw ? JSON.parse(raw) : []);
+    const arr = raw ? JSON.parse(raw) : [];
+    render(arr.map((r, i) => Object.assign({ _key: String(i) }, r)));
   } catch (_) {
     render([]);
   }
 }
+
+async function deleteRecord(key) {
+  if (key == null) return;
+  if (!confirm('Excluir este registro do histórico? Essa ação não pode ser desfeita.')) return;
+  if (FIREBASE_CONFIG) {
+    try {
+      await firebase.database().ref('visitas').child(key).remove();
+    } catch (e) {
+      console.error(e);
+      alert('Não foi possível excluir o registro.');
+    }
+  } else {
+    try {
+      const raw = localStorage.getItem(LOG_STORE);
+      const arr = raw ? JSON.parse(raw) : [];
+      arr.splice(Number(key), 1);
+      localStorage.setItem(LOG_STORE, JSON.stringify(arr));
+      loadFromLocalStorage();
+    } catch (e) {
+      console.error(e);
+      alert('Não foi possível excluir o registro.');
+    }
+  }
+}
+document.getElementById('log-body').addEventListener('click', e => {
+  const btn = e.target.closest('.btn-delete');
+  if (!btn) return;
+  deleteRecord(btn.dataset.key);
+});
 
 if (FIREBASE_CONFIG) {
   try {
@@ -232,7 +274,7 @@ if (FIREBASE_CONFIG) {
     const ref = firebase.database().ref('visitas');
     ref.on('value', snap => {
       const val = snap.val() || {};
-      render(Object.values(val));
+      render(Object.entries(val).map(([key, r]) => Object.assign({ _key: key }, r)));
     }, err => {
       console.error(err);
       loadFromLocalStorage();
