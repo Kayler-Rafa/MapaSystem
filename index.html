@@ -68,12 +68,11 @@
       fill: #7a7a7a !important;
       fill-opacity: 1 !important;
     }
-    #map-inner svg.view-layer path.selecting {
-      fill: #3b82f6 !important;
-      fill-opacity: 1 !important;
-    }
-    #map-inner svg.view-layer path.hover:not(.visited):not(.selecting) { opacity: .72; }
+    #map-inner svg.view-layer path.hover:not(.visited) { opacity: .72; }
     #map-inner svg.view-layer path.flash { animation: flash .5s ease 2; }
+    /* Camada de destaque de seleção: cópias translúcidas desenhadas por cima
+       das quadras selecionadas (ver #selection-overlay no JS) */
+    #selection-overlay { pointer-events: none; }
 
     /* Camada de clique (MapaSem.svg) — invisível por cima, só as quadras captam clique */
     #map-inner svg.hit-layer {
@@ -885,15 +884,39 @@ function joinWithE(arr) {
 //  gera um registro no log de visitas (Firebase 'visitas' ou localStorage).
 // ─────────────────────────────────────────────
 let selection = new Set();
+let selectionOverlay = null; // <g> com cópias translúcidas por cima das quadras selecionadas
 const LOG_STORE = 'mapa-visitas-v1';
 
+// Desenha a seleção como uma cópia translúcida + borda por cima da quadra
+// original, em vez de sobrescrever o fill dela — assim a cor do território
+// continua visível por baixo, e a seleção nunca fica invisível (a borda
+// sempre acompanha o contorno inteiro, mesmo em quadras bem estreitas).
 function applySelectionVisuals() {
-  if (!svgView) return;
-  svgView.querySelectorAll('path.selecting').forEach(p => p.classList.remove('selecting'));
+  if (!svgView || !selectionOverlay) return;
+  selectionOverlay.innerHTML = '';
   selection.forEach(id => {
     fragmentsOf(id).forEach(realId => {
-      const p = svgView.getElementById(realId);
-      if (p) p.classList.add('selecting');
+      const src = svgView.getElementById(realId);
+      if (!src) return;
+      // O overlay é filho direto da raiz do SVG (sem os transforms dos grupos
+      // originais). Calcula o transform via screenCTM (mais confiável que
+      // getCTM sozinho — evita escala duplicada pela conversão do viewBox).
+      const rootCTM = svgView.getScreenCTM();
+      const srcCTM  = src.getScreenCTM();
+      if (!rootCTM || !srcCTM) return;
+      const m = rootCTM.inverse().multiply(srcCTM);
+      const clone = src.cloneNode(false);
+      clone.removeAttribute('id');
+      clone.removeAttribute('class');
+      clone.removeAttribute('style');
+      clone.setAttribute('transform', `matrix(${m.a},${m.b},${m.c},${m.d},${m.e},${m.f})`);
+      clone.setAttribute('fill', '#3b82f6');
+      clone.setAttribute('fill-opacity', '0.45');
+      clone.setAttribute('stroke', '#1d4ed8');
+      clone.setAttribute('stroke-width', '2');
+      clone.setAttribute('stroke-opacity', '1');
+      clone.setAttribute('vector-effect', 'non-scaling-stroke');
+      selectionOverlay.appendChild(clone);
     });
   });
 }
@@ -1203,6 +1226,12 @@ async function loadMap() {
     svgHit.querySelectorAll('text, tspan, ellipse, image').forEach(el => el.remove());
     inner.appendChild(svgView);  // visível embaixo
     inner.appendChild(svgHit);   // invisível por cima
+
+    // Grupo filho direto da raiz do svgView — fica por cima de tudo (última
+    // ordem de pintura), usado pelo destaque de seleção (ver applySelectionVisuals)
+    selectionOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    selectionOverlay.setAttribute('id', 'selection-overlay');
+    svgView.appendChild(selectionOverlay);
 
     blockLabels = buildLabelMap(svgView);
     setupBlockClicks();
