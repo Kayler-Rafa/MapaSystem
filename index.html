@@ -68,7 +68,11 @@
       fill: #7a7a7a !important;
       fill-opacity: 1 !important;
     }
-    #map-inner svg.view-layer path.hover:not(.visited) { opacity: .72; }
+    #map-inner svg.view-layer path.selecting {
+      fill: #3b82f6 !important;
+      fill-opacity: 1 !important;
+    }
+    #map-inner svg.view-layer path.hover:not(.visited):not(.selecting) { opacity: .72; }
     #map-inner svg.view-layer path.flash { animation: flash .5s ease 2; }
 
     /* Camada de clique (MapaSem.svg) — invisível por cima, só as quadras captam clique */
@@ -143,6 +147,74 @@
     }
     .z-btn:hover  { opacity: .85; }
     .z-btn:active { transform: scale(.93); }
+
+    /* ══ SELEÇÃO (marcar quadras antes de confirmar) ═══ */
+    #selection-bar {
+      position: fixed; left: 14px; bottom: 172px; z-index: 26;
+      background: var(--panel-bg); border: 1px solid var(--border);
+      border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,.14);
+      padding: 8px 10px 8px 14px;
+      display: none; align-items: center; gap: 10px;
+      font-size: 0.82rem; color: var(--text-1);
+    }
+    #selection-bar.show { display: flex; }
+    #selection-count { font-weight: 600; white-space: nowrap; }
+    #selection-clear {
+      background: transparent; border: none; color: var(--text-2);
+      font-size: 0.95rem; cursor: pointer; padding: 4px 6px; line-height: 1;
+    }
+    #selection-clear:hover { color: var(--text-1); }
+    #selection-confirm {
+      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      background: #3b82f6; color: #fff; border: none;
+      font-size: 1.05rem; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: filter .12s;
+    }
+    #selection-confirm:hover { filter: brightness(1.1); }
+
+    @media (max-width: 768px) {
+      #selection-bar { left: 14px; bottom: 96px; }
+    }
+
+    /* ══ MODAL DE CONFIRMAÇÃO ═══════════════════════════ */
+    #confirm-overlay {
+      position: fixed; inset: 0; z-index: 60;
+      background: rgba(15,23,42,.55);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    #confirm-overlay.show { display: flex; }
+    #confirm-modal {
+      background: var(--panel-bg); border-radius: 16px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.25);
+      padding: 22px; width: 100%; max-width: 360px;
+    }
+    #confirm-modal h3 { font-size: 1.05rem; color: var(--text-1); margin-bottom: 8px; }
+    #confirm-summary { font-size: 0.82rem; color: var(--text-2); margin-bottom: 4px; line-height: 1.55; }
+    #confirm-summary b { color: var(--text-1); }
+    .field-label {
+      font-size: 0.75rem; font-weight: 600; color: var(--text-2);
+      display: block; margin: 14px 0 5px;
+    }
+    .field-input {
+      width: 100%; padding: 9px 11px; font-size: 0.88rem;
+      border: 1.5px solid var(--border); border-radius: 9px;
+      background: var(--bg); color: var(--text-1); outline: none;
+      transition: border-color .12s; font-family: inherit;
+    }
+    .field-input:focus { border-color: #3b82f6; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+    .modal-actions button {
+      flex: 1; padding: 10px; border-radius: 9px;
+      font-size: 0.85rem; font-weight: 600; cursor: pointer; border: none;
+      transition: filter .12s, background .12s;
+    }
+    #confirm-cancel { background: var(--bar-track); color: var(--text-2); }
+    #confirm-cancel:hover { background: var(--border); }
+    #confirm-submit { background: #3b82f6; color: #fff; }
+    #confirm-submit:hover { filter: brightness(1.08); }
+    #confirm-submit:disabled { opacity: .6; cursor: default; }
 
     /* ══ PAINEL ════════════════════════════════════════ */
     #panel {
@@ -315,6 +387,13 @@
   <button class="z-btn" id="z-fit" title="Ajustar">⌂</button>
 </div>
 
+<!-- Barra de seleção (aparece ao marcar quadras, antes de confirmar) -->
+<div id="selection-bar">
+  <span id="selection-count">0 selecionadas</span>
+  <button id="selection-clear" title="Limpar seleção">✕</button>
+  <button id="selection-confirm" title="Confirmar">✓</button>
+</div>
+
 <!-- Painel de territórios -->
 <div id="panel">
   <div id="sheet-drag-zone">
@@ -331,6 +410,22 @@
   <div id="panel-footer">
     <button id="btn-share-map">📤 Compartilhar mapa</button>
     <button id="btn-reset-map">↺ Resetar mapa</button>
+  </div>
+</div>
+
+<!-- Modal de confirmação (nome + data da visita) -->
+<div id="confirm-overlay">
+  <div id="confirm-modal">
+    <h3>Confirmar quadras trabalhadas</h3>
+    <div id="confirm-summary"></div>
+    <label class="field-label" for="confirm-name">Nome</label>
+    <input id="confirm-name" class="field-input" type="text" placeholder="Seu nome" autocomplete="off">
+    <label class="field-label" for="confirm-date">Data da visita</label>
+    <input id="confirm-date" class="field-input" type="date">
+    <div class="modal-actions">
+      <button id="confirm-cancel">Cancelar</button>
+      <button id="confirm-submit">Confirmar</button>
+    </div>
   </div>
 </div>
 
@@ -372,6 +467,7 @@ const TERRITORIES = [
 const STORE = 'mapa-territorios-v1';
 let state = { visited: {}, names: {} };
 let firebaseRef = null;
+let firebaseVisitasRef = null;
 
 function migrateState(s) {
   if (!s.names)   s.names   = {};
@@ -409,6 +505,7 @@ function initFirebase() {
     firebase.initializeApp(FIREBASE_CONFIG);
     const db  = firebase.database();
     firebaseRef = db.ref('estado');
+    firebaseVisitasRef = db.ref('visitas');
 
     // Escuta mudanças em tempo real
     firebaseRef.on('value', snap => {
@@ -676,11 +773,16 @@ function setupBlockClicks() {
       e.stopPropagation();
       if (dragMoved) return;
       const id = canon(p.id);
-      state.visited[id] = !state.visited[id];
-      applyAllVisited();
-      saveState();
-      renderSidebar();
-      updateStats();
+      if (state.visited[id]) {
+        // Já marcada → desmarcar continua instantâneo, sem confirmação
+        delete state.visited[id];
+        applyAllVisited();
+        saveState();
+        renderSidebar();
+        updateStats();
+      } else {
+        toggleSelection(id);
+      }
     });
   }
 }
@@ -692,6 +794,137 @@ function flashTerritory(t) {
     setTimeout(() => p.classList.remove('flash'), 1100);
   });
 }
+
+// ─────────────────────────────────────────────
+//  Seleção & confirmação (nome + data da visita)
+//  Clicar marca a quadra de azul (seleção); só vira cinza de fato
+//  quando o usuário confirma no modal com nome + data. Cada confirmação
+//  gera um registro no log de visitas (Firebase 'visitas' ou localStorage).
+// ─────────────────────────────────────────────
+let selection = new Set();
+const LOG_STORE = 'mapa-visitas-v1';
+
+function applySelectionVisuals() {
+  if (!svgView) return;
+  svgView.querySelectorAll('path.selecting').forEach(p => p.classList.remove('selecting'));
+  selection.forEach(id => {
+    fragmentsOf(id).forEach(realId => {
+      const p = svgView.getElementById(realId);
+      if (p) p.classList.add('selecting');
+    });
+  });
+}
+function updateSelectionBar() {
+  const bar = document.getElementById('selection-bar');
+  const n = selection.size;
+  bar.classList.toggle('show', n > 0);
+  document.getElementById('selection-count').textContent =
+    n === 1 ? '1 selecionada' : `${n} selecionadas`;
+}
+function toggleSelection(id) {
+  if (selection.has(id)) selection.delete(id);
+  else selection.add(id);
+  applySelectionVisuals();
+  updateSelectionBar();
+}
+function clearSelection() {
+  selection.clear();
+  applySelectionVisuals();
+  updateSelectionBar();
+}
+document.getElementById('selection-clear').addEventListener('click', e => {
+  e.stopPropagation();
+  clearSelection();
+});
+
+function territoryBreakdown(ids) {
+  const byTerr = {};
+  for (const id of ids) {
+    const t = TERRITORIES.find(t => blockPaths(svgHit, t).some(p => canon(p.id) === id));
+    const name = t ? (state.names[t.id] || t.name) : 'Outro';
+    byTerr[name] = (byTerr[name] || 0) + 1;
+  }
+  return byTerr;
+}
+
+const confirmOverlay = document.getElementById('confirm-overlay');
+const confirmName    = document.getElementById('confirm-name');
+const confirmDate    = document.getElementById('confirm-date');
+const confirmSummary = document.getElementById('confirm-summary');
+const confirmSubmit  = document.getElementById('confirm-submit');
+
+function openConfirmModal() {
+  if (selection.size === 0) return;
+  const breakdown = territoryBreakdown([...selection]);
+  const lines = Object.entries(breakdown).map(([name, n]) => `<b>${n}</b> em ${escHtml(name)}`);
+  const n = selection.size;
+  confirmSummary.innerHTML = `${n} quadra${n > 1 ? 's' : ''} selecionada${n > 1 ? 's' : ''}: ${lines.join(', ')}`;
+  confirmName.value = '';
+  confirmDate.value = new Date().toISOString().slice(0, 10);
+  confirmOverlay.classList.add('show');
+  setTimeout(() => confirmName.focus(), 50);
+}
+function closeConfirmModal() {
+  confirmOverlay.classList.remove('show');
+}
+document.getElementById('selection-confirm').addEventListener('click', e => {
+  e.stopPropagation();
+  openConfirmModal();
+});
+document.getElementById('confirm-cancel').addEventListener('click', closeConfirmModal);
+confirmOverlay.addEventListener('click', e => {
+  if (e.target === confirmOverlay) closeConfirmModal();
+});
+
+async function saveVisitLog(record) {
+  if (firebaseVisitasRef) {
+    await firebaseVisitasRef.push(record);
+  } else {
+    try {
+      const raw = localStorage.getItem(LOG_STORE);
+      const arr = raw ? JSON.parse(raw) : [];
+      arr.push(record);
+      localStorage.setItem(LOG_STORE, JSON.stringify(arr));
+    } catch (_) {}
+  }
+}
+
+confirmSubmit.addEventListener('click', async () => {
+  const nome = confirmName.value.trim();
+  const data = confirmDate.value;
+  if (!nome) { confirmName.focus(); return; }
+  if (!data) { confirmDate.focus(); return; }
+
+  const ids  = [...selection];
+  const orig = confirmSubmit.textContent;
+  confirmSubmit.disabled    = true;
+  confirmSubmit.textContent = 'Salvando...';
+  try {
+    ids.forEach(id => { state.visited[id] = true; });
+    applyAllVisited();
+    saveState();
+    renderSidebar();
+    updateStats();
+
+    await saveVisitLog({
+      nome,
+      data,
+      timestamp: Date.now(),
+      totalQuadras: ids.length,
+      quadras: ids,
+      porTerritorio: territoryBreakdown(ids),
+    });
+
+    clearSelection();
+    closeConfirmModal();
+  } catch (e) {
+    console.error(e);
+    alert('Não foi possível salvar a confirmação.');
+  } finally {
+    confirmSubmit.disabled    = false;
+    confirmSubmit.textContent = orig;
+  }
+});
 
 // ─────────────────────────────────────────────
 //  Stats globais
@@ -852,6 +1085,7 @@ document.getElementById('btn-reset-map').addEventListener('click', e => {
   e.stopPropagation();
   if (!confirm('Resetar o mapa? Todas as quadras voltarão a ter cor.')) return;
   state.visited = {};
+  clearSelection();
   saveState();
   applyAllVisited();
   renderSidebar();
