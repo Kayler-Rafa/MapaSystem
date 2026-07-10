@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="light">
+<html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -22,19 +22,6 @@
     --reset-bg:     #fef2f2;
     --reset-border: #fca5a5;
     --reset-color:  #dc2626;
-  }
-  [data-theme="dark"] {
-    --bg:         #0d1520;
-    --card-bg:    #1a2535;
-    --border:     #2d3f55;
-    --text-1:     #e2eaf4;
-    --text-2:     #8da4be;
-    --text-3:     #4e6782;
-    --accent:     #60a5fa;
-    --row-hover:  #1e2d40;
-    --reset-bg:     rgba(220,38,38,.15);
-    --reset-border: rgba(220,38,38,.4);
-    --reset-color:  #f87171;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -225,11 +212,6 @@ function loadMapStateFromLocalStorage() {
     mapState = { visited: {}, names: {} };
   }
   if (window.__adminMap) window.__adminMap.applyAllVisited();
-}
-
-// Modo escuro automático pela preferência do sistema
-if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-  document.documentElement.setAttribute('data-theme', 'dark');
 }
 
 // ─────────────────────────────────────────────

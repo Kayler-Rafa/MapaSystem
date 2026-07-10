@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="light">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
@@ -11,7 +11,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
 
   <style>
-    /* ══ TEMA ══════════════════════════════════════════ */
+    /* ══ TEMA (claro fixo) ═══════════════════════════════ */
     :root {
       --bg:           #dde2e8;
       --panel-bg:     #ffffff;
@@ -30,25 +30,6 @@
       --handle-color: #cbd5e1;
       --spinner-track:#cbd5e1;
       --spinner-fill: #3b82f6;
-    }
-    [data-theme="dark"] {
-      --bg:           #0d1520;
-      --panel-bg:     #1a2535;
-      --panel-head:   #1a2535;
-      --card-hover:   #1e2d40;
-      --border:       #2d3f55;
-      --text-1:       #e2eaf4;
-      --text-2:       #8da4be;
-      --text-3:       #4e6782;
-      --bar-track:    #2d3f55;
-      --glass-bg:     rgba(255, 255, 255, .10);
-      --glass-text:   #e2eaf4;
-      --reset-bg:     rgba(220,38,38,.15);
-      --reset-border: rgba(220,38,38,.4);
-      --reset-color:  #f87171;
-      --handle-color: #2d3f55;
-      --spinner-track:#2d3f55;
-      --spinner-fill: #60a5fa;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -104,18 +85,6 @@
     }
     #app-pill  { padding: 9px 14px; font-size: 0.88rem; font-weight: 700; display: flex; align-items: center; gap: 7px; }
     #stats-pill { padding: 7px 13px; font-size: 0.78rem; font-weight: 500; }
-    #theme-btn {
-      width: 38px; height: 38px; border-radius: 50%;
-      background: var(--glass-bg);
-      backdrop-filter: blur(14px);
-      -webkit-backdrop-filter: blur(14px);
-      border: 1px solid rgba(255,255,255,.08);
-      color: var(--glass-text);
-      cursor: pointer; font-size: 1rem;
-      display: flex; align-items: center; justify-content: center;
-      pointer-events: auto; transition: opacity .15s;
-    }
-    #theme-btn:hover { opacity: .8; }
     #sync-dot {
       width: 8px; height: 8px; border-radius: 50%; background: #94a3b8;
       transition: background .4s;
@@ -366,7 +335,6 @@
   </div>
   <div id="topbar-right">
     <div id="stats-pill" class="glass-pill">—</div>
-    <button id="theme-btn" title="Alternar tema">🌙</button>
   </div>
 </div>
 
@@ -521,23 +489,6 @@ function initFirebase() {
     console.error('Firebase init error:', e);
   }
 }
-
-// ─────────────────────────────────────────────
-//  Tema (dark / light)
-// ─────────────────────────────────────────────
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  document.getElementById('theme-btn').textContent = theme === 'dark' ? '☀️' : '🌙';
-}
-function toggleTheme() {
-  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-  applyTheme(next);
-  localStorage.setItem('tema', next);
-}
-document.getElementById('theme-btn').addEventListener('click', toggleTheme);
-
-// Inicia com tema salvo; padrão é o modo claro
-applyTheme(localStorage.getItem('tema') || 'light');
 
 // ─────────────────────────────────────────────
 //  Pan & Zoom
