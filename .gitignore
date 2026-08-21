@@ -1,1 +1,10 @@
 .claude/
+
+# Fontes originais em alta resolução dos cartões de território (~2MB cada).
+# O site usa só as versões otimizadas em Imgs/layer1-6.png/.webp.
+Imgs/Ametista.png
+Imgs/Topázio.png
+Imgs/Pérola.png
+Imgs/Crisólito.png
+Imgs/Jacinto.png
+Imgs/Esmeralda.png

@@ -133,16 +133,19 @@
     }
     #selection-clear:hover { color: var(--text-1); }
     #selection-confirm {
-      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
       background: #3b82f6; color: #fff; border: none;
-      font-size: 1.05rem; font-weight: 700; cursor: pointer;
+      font-size: 1.3rem; font-weight: 700; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
-      transition: filter .12s;
+      transition: filter .12s, transform .1s;
     }
-    #selection-confirm:hover { filter: brightness(1.1); }
+    #selection-confirm:hover  { filter: brightness(1.1); }
+    #selection-confirm:active { transform: scale(.93); }
 
     @media (max-width: 768px) {
-      #selection-bar { left: 14px; bottom: 96px; }
+      #selection-bar { left: 14px; bottom: 96px; padding: 9px 11px 9px 16px; }
+      #selection-confirm { width: 56px; height: 56px; font-size: 1.5rem; }
+      #selection-count { font-size: 0.88rem; }
     }
 
     /* ══ MODAL DE CONFIRMAÇÃO ═══════════════════════════ */
@@ -217,10 +220,30 @@
     .global-bar { height: 4px; background: var(--bar-track); border-radius: 2px; overflow: hidden; }
     .global-bar-fill { height: 100%; background: #3b82f6; border-radius: 2px; transition: width .4s; }
 
-    /* Lista */
-    #territory-list { flex: 1; overflow-y: auto; }
+    /* Abas */
+    #panel-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .tab-btn {
+      flex: 1; padding: 10px; background: transparent; border: none;
+      font-size: 0.8rem; font-weight: 600; color: var(--text-3);
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: color .15s, border-color .15s;
+    }
+    .tab-btn:hover { color: var(--text-2); }
+    .tab-btn.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+    .tab-panel { display: none; flex: 1; overflow-y: auto; }
+    .tab-panel.active { display: block; }
+
+    /* Lista (Progresso) */
     #territory-list::-webkit-scrollbar { width: 3px; }
     #territory-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* Lista (Mapas) */
+    #maps-list { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+    .map-card-item { display: block; }
+    .map-card-item-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .map-card-item-name { font-size: 0.85rem; font-weight: 600; color: var(--text-1); }
+    .map-card-item a { display: block; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+    .map-card-item img { display: block; width: 100%; height: auto; }
 
     /* Card */
     .t-card {
@@ -257,6 +280,16 @@
     }
     #btn-share-map:hover { filter: brightness(1.08); }
     #btn-share-map:disabled { opacity: .6; cursor: default; }
+    #btn-share-progress {
+      width: 100%; padding: 9px;
+      font-size: 0.82rem; font-weight: 600;
+      color: var(--spinner-fill); background: transparent;
+      border: 1.5px solid var(--spinner-fill); border-radius: 8px;
+      cursor: pointer; transition: all .15s;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    #btn-share-progress:hover { background: var(--spinner-fill); color: #fff; }
+    #btn-share-progress:disabled { opacity: .6; cursor: default; }
 
     /* ══ MOBILE ════════════════════════════════════════ */
     @media (max-width: 768px) {
@@ -364,9 +397,15 @@
       <div class="global-bar"><div class="global-bar-fill" id="global-bar-fill" style="width:0%"></div></div>
     </div>
   </div>
-  <div id="territory-list"></div>
+  <div id="panel-tabs">
+    <button class="tab-btn active" data-tab="progresso">Progresso</button>
+    <button class="tab-btn" data-tab="mapas">Mapas</button>
+  </div>
+  <div id="territory-list" class="tab-panel active"></div>
+  <div id="maps-list" class="tab-panel"></div>
   <div id="panel-footer">
     <button id="btn-share-map">📤 Compartilhar mapa</button>
+    <button id="btn-share-progress">📊 Compartilhar progresso</button>
   </div>
 </div>
 
@@ -471,6 +510,7 @@ function initFirebase() {
       state = migrateState(Object.assign({ visited: {}, names: {} }, val));
       applyAllVisited();
       renderSidebar();
+      renderMapsListIfNeeded();
       updateStats();
     });
 
@@ -536,8 +576,19 @@ window.addEventListener('mouseup', () => {
 });
 viewport.addEventListener('wheel', e => {
   e.preventDefault();
-  const r = viewport.getBoundingClientRect();
-  zoomAt(e.deltaY < 0 ? 1.12 : 0.89, e.clientX - r.left, e.clientY - r.top);
+  if (e.ctrlKey) {
+    // Pinch-to-zoom no trackpad (o navegador manda como wheel+ctrlKey) ou
+    // Ctrl+scroll do mouse → zoom de verdade.
+    const r = viewport.getBoundingClientRect();
+    zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
+  } else {
+    // Scroll comum do mouse ou arrastar com dois dedos no trackpad → pan.
+    // (Antes isso também zoomava, fazendo o "arrastar" no trackpad parecer
+    // um zoom descontrolado.)
+    tx -= e.deltaX;
+    ty -= e.deltaY;
+    applyTx();
+  }
 }, { passive: false });
 
 let prevT = null, prevD = 0;
@@ -1022,6 +1073,54 @@ function renderSidebar() {
 }
 
 // ─────────────────────────────────────────────
+//  Aba "Mapas" — cartões de referência por território (imagens em Imgs/)
+// ─────────────────────────────────────────────
+let mapsListRendered = false;
+function renderMapsList() {
+  mapsListRendered = true;
+  const list = document.getElementById('maps-list');
+  list.innerHTML = '';
+  for (const t of TERRITORIES) {
+    const name = state.names[t.id] || t.name;
+    const item = document.createElement('div');
+    item.className = 'map-card-item';
+    item.innerHTML = `
+      <div class="map-card-item-top">
+        <div class="t-dot" style="background:${t.color}"></div>
+        <div class="map-card-item-name">${escHtml(name)}</div>
+      </div>
+      <a href="./Imgs/${t.id}.png" target="_blank" rel="noopener" title="Abrir em tela cheia">
+        <picture>
+          <source srcset="./Imgs/${t.id}.webp" type="image/webp">
+          <img src="./Imgs/${t.id}.png" alt="Mapa detalhado — ${escHtml(name)}">
+        </picture>
+      </a>
+    `;
+    list.appendChild(item);
+  }
+}
+// Só (re)constrói a lista se ela já tiver sido aberta antes — evita baixar
+// as 6 imagens à toa pra quem nunca abre essa aba.
+function renderMapsListIfNeeded() {
+  if (mapsListRendered) renderMapsList();
+}
+
+// Troca de abas do painel (Progresso / Mapas)
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab === 'mapas' ? 'maps-list' : 'territory-list').classList.add('active');
+    // Constrói a lista de imagens só na primeira vez que a aba é aberta —
+    // como ela nasce já visível, não depende do lazy-loading nativo do
+    // navegador (que não recarrega direito quando o elemento começa
+    // escondido dentro de uma aba fechada).
+    if (btn.dataset.tab === 'mapas' && !mapsListRendered) renderMapsList();
+  });
+});
+
+// ─────────────────────────────────────────────
 //  Compartilhar / Exportar PNG
 //  Gambiarra: o site usa MapaSem.svg (hitbox limpa), mas a imagem
 //  exportada é gerada a partir do MapaCompleto.svg (com ruas e nomes),
@@ -1049,8 +1148,11 @@ async function buildExportBlob() {
   const H   = vb.height || 1600;
 
   // Renderiza em resolução maior para nitidez (SVG é vetorial → escala sem perda).
-  // Teto de ~16M px para não estourar o limite de canvas do iOS Safari.
-  const MAX_DIM    = 3600;
+  // MAX_DIM menor = gera mais rápido, o que importa pro compartilhamento no
+  // Android: navigator.share() só funciona dentro da janela curta de "gesto
+  // do usuário" logo após o clique — se a geração da imagem demorar demais,
+  // o navegador recusa o compartilhamento silenciosamente.
+  const MAX_DIM    = 2400;
   const MAX_PIXELS = 16e6;
   let scale = MAX_DIM / Math.max(W, H);
   if (W * scale * H * scale > MAX_PIXELS) scale = Math.sqrt(MAX_PIXELS / (W * H));
@@ -1100,7 +1202,10 @@ document.getElementById('btn-share-map').addEventListener('click', async () => {
     const file = new File([blob], 'mapa-territorios.png', { type: 'image/png' });
 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'Mapa de Territórios' });
+      // Sem "title"/"text": alguns apps Android (ex: certas versões do
+      // WhatsApp) ignoram o arquivo quando o payload do compartilhamento
+      // vem com campos extras além de "files".
+      await navigator.share({ files: [file] });
     } else {
       const a = document.createElement('a');
       a.href     = URL.createObjectURL(blob);
@@ -1111,7 +1216,120 @@ document.getElementById('btn-share-map').addEventListener('click', async () => {
   } catch (e) {
     if (e.name !== 'AbortError') {   // AbortError = usuário cancelou o share
       console.error(e);
-      alert('Não foi possível gerar a imagem.');
+      alert('Não foi possível compartilhar. Tenta de novo — em alguns celulares o compartilhamento falha se a imagem demorar muito pra gerar.');
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
+});
+
+// ─────────────────────────────────────────────
+//  Compartilhar quadro de progresso (lista de territórios + barras)
+// ─────────────────────────────────────────────
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+async function buildProgressBlob() {
+  const scale   = 2;
+  const W       = 900, rowH = 92, headerH = 100, footerH = 66, pad = 28;
+  const H       = headerH + TERRITORIES.length * rowH + footerH;
+  const canvas  = document.createElement('canvas');
+  canvas.width  = W * scale;
+  canvas.height = H * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 26px system-ui, sans-serif';
+  ctx.fillText('Progresso dos Territórios', pad, 42);
+  const now = new Date();
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '400 14px system-ui, sans-serif';
+  ctx.fillText(
+    now.toLocaleDateString('pt-BR') + ' às ' + now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    pad, 64
+  );
+  ctx.strokeStyle = '#f1f5f9';
+  ctx.beginPath(); ctx.moveTo(pad, headerH - 12); ctx.lineTo(W - pad, headerH - 12); ctx.stroke();
+
+  let y = headerH;
+  let totalDone = 0, totalAll = 0;
+  for (const t of TERRITORIES) {
+    const { done, total } = countBlocks(t);
+    totalDone += done; totalAll += total;
+    const pct  = total ? Math.round((done / total) * 100) : 0;
+    const name = state.names[t.id] || t.name;
+
+    ctx.fillStyle = t.color;
+    ctx.beginPath(); ctx.arc(pad + 7, y + 27, 7, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#1e293b';
+    ctx.font = '600 18px system-ui, sans-serif';
+    ctx.fillText(name, pad + 26, y + 33);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '500 15px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(pct + '%', W - pad, y + 33);
+    ctx.textAlign = 'left';
+
+    const barY = y + 46, barW = W - pad * 2, barH = 8;
+    ctx.fillStyle = '#f1f5f9';
+    roundRect(ctx, pad, barY, barW, barH, 4); ctx.fill();
+    if (pct > 0) {
+      ctx.fillStyle = t.color;
+      roundRect(ctx, pad, barY, Math.max(barH, barW * pct / 100), barH, 4); ctx.fill();
+    }
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '400 13px system-ui, sans-serif';
+    ctx.fillText(`${done} de ${total} quadras trabalhadas`, pad, barY + 26);
+
+    y += rowH;
+  }
+
+  ctx.strokeStyle = '#f1f5f9';
+  ctx.beginPath(); ctx.moveTo(pad, y + 10); ctx.lineTo(W - pad, y + 10); ctx.stroke();
+  const totalPct = totalAll ? Math.round((totalDone / totalAll) * 100) : 0;
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 20px system-ui, sans-serif';
+  ctx.fillText(`Total: ${totalDone} / ${totalAll} (${totalPct}%)`, pad, y + 42);
+
+  return await new Promise(res => canvas.toBlob(res, 'image/png'));
+}
+
+document.getElementById('btn-share-progress').addEventListener('click', async () => {
+  const btn  = document.getElementById('btn-share-progress');
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = '⏳ Gerando imagem...';
+  try {
+    const blob = await buildProgressBlob();
+    const file = new File([blob], 'progresso-territorios.png', { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+    } else {
+      const a = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = 'progresso-territorios.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      console.error(e);
+      alert('Não foi possível compartilhar o progresso.');
     }
   } finally {
     btn.disabled    = false;
