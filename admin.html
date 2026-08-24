@@ -75,6 +75,27 @@
     th, td { padding: 9px 10px; font-size: 0.78rem; }
   }
 
+  /* ══ HISTÓRICO — mostra só os registros recentes por padrão ═══ */
+  tr.hist-extra { display: none; }
+  #log-table.expanded tr.hist-extra { display: table-row; }
+  #hist-toggle-row td {
+    text-align: center; cursor: pointer; color: var(--accent); font-weight: 600;
+    padding: 10px; background: var(--row-hover); border-bottom: none;
+  }
+  #hist-toggle-row:hover td { background: var(--border); }
+
+  /* ══ TÍTULO DO MAPA (campanhas especiais) ═══════════ */
+  .title-card-inner { padding: 16px; }
+  .title-card-inner h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 3px; }
+  .title-card-inner p { font-size: 0.78rem; color: var(--text-2); margin-bottom: 10px; }
+  #map-title-input {
+    width: 100%; padding: 10px 12px; font-size: 0.9rem;
+    border: 1.5px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text-1); outline: none;
+    font-family: inherit; transition: border-color .12s;
+  }
+  #map-title-input:focus { border-color: var(--accent); }
+
   /* ══ MAPA DE CORREÇÃO LIVRE (card recolhível) ═══════ */
   #map-details > summary { list-style: none; cursor: pointer; }
   #map-details > summary::-webkit-details-marker { display: none; }
@@ -149,9 +170,22 @@
           </tr>
         </thead>
         <tbody id="log-body"></tbody>
+        <tfoot>
+          <tr id="hist-toggle-row" style="display:none">
+            <td colspan="6" id="hist-toggle-cell">▾ Ver mais</td>
+          </tr>
+        </tfoot>
       </table>
       <div class="loading" id="loading">Carregando histórico…</div>
       <div class="empty" id="empty" style="display:none">Nenhuma visita registrada ainda.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="title-card-inner">
+      <h2>Título do mapa</h2>
+      <p>Aparece acima do mapa quando exportado — use pra campanhas especiais. Deixe em branco pra não mostrar nada.</p>
+      <input type="text" id="map-title-input" placeholder="Ex: 🎄 Campanha de Natal até 25/12" maxlength="120">
     </div>
   </div>
 
@@ -190,8 +224,21 @@ const FIREBASE_CONFIG = {
   appId: "1:4497521251:web:ed3da5b33d73f98cc79656"
 };
 
-const LOG_STORE   = 'mapa-visitas-v1';    // fallback local, mesmo nome usado no index.html
+const LOG_STORE   = 'mapa-visitas-v1';     // fallback local, mesmo nome usado no index.html
 const STATE_STORE = 'mapa-territorios-v1'; // idem, para o estado (quadras marcadas)
+const TITLE_STORE = 'mapa-titulo-v1';      // idem, para o título do mapa
+
+// Título opcional (campanhas especiais) — sincronizado com Firebase 'titulo',
+// o mesmo caminho que index.html lê pra desenhar acima das imagens exportadas.
+let titleRef = null;
+const titleInput = document.getElementById('map-title-input');
+function saveMapTitle(val) {
+  if (titleRef) return titleRef.set(val);
+  try { localStorage.setItem(TITLE_STORE, val); } catch (_) {}
+  return Promise.resolve();
+}
+titleInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); titleInput.blur(); } });
+titleInput.addEventListener('blur', () => { saveMapTitle(titleInput.value.trim()); });
 
 // Estado do mapa (quadras marcadas + nomes de território), compartilhado
 // entre o card de reset e o mapa de edição livre abaixo. Fica sincronizado
@@ -421,17 +468,37 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// Mostra só os PREVIEW_COUNT registros mais recentes por padrão; o resto
+// fica escondido (classe .hist-extra) até clicar em "Ver mais".
+const PREVIEW_COUNT = 5;
+let histExpanded  = false;
+let histExtraCount = 0;
+
+function updateHistToggleLabel() {
+  const cell = document.getElementById('hist-toggle-cell');
+  cell.textContent = histExpanded
+    ? '▴ Mostrar menos'
+    : `▾ Ver mais ${histExtraCount} registro${histExtraCount > 1 ? 's' : ''}`;
+}
+document.getElementById('hist-toggle-row').addEventListener('click', () => {
+  histExpanded = !histExpanded;
+  document.getElementById('log-table').classList.toggle('expanded', histExpanded);
+  updateHistToggleLabel();
+});
+
 function render(records) {
-  const table   = document.getElementById('log-table');
-  const body    = document.getElementById('log-body');
-  const loading = document.getElementById('loading');
-  const empty   = document.getElementById('empty');
-  const summary = document.getElementById('summary');
+  const table      = document.getElementById('log-table');
+  const body       = document.getElementById('log-body');
+  const loading    = document.getElementById('loading');
+  const empty      = document.getElementById('empty');
+  const summary    = document.getElementById('summary');
+  const toggleRow  = document.getElementById('hist-toggle-row');
   loading.style.display = 'none';
 
   if (!records.length) {
     empty.style.display = 'block';
     table.style.display = 'none';
+    toggleRow.style.display = 'none';
     summary.textContent = 'Nenhum registro';
     return;
   }
@@ -441,7 +508,7 @@ function render(records) {
   const totalQuadras = records.reduce((s, r) => s + (r.totalQuadras || (r.quadras ? r.quadras.length : 0)), 0);
   summary.textContent = `${records.length} confirmação${records.length > 1 ? 'ões' : ''} · ${totalQuadras} quadra${totalQuadras !== 1 ? 's' : ''} no total`;
 
-  body.innerHTML = records.map(r => {
+  body.innerHTML = records.map((r, i) => {
     const n = r.totalQuadras || (r.quadras ? r.quadras.length : 0);
     // quadraLabels (ex: "19A") é o formato novo; cai pros ids brutos em
     // registros antigos que não tinham esse campo salvo ainda.
@@ -449,8 +516,9 @@ function render(records) {
     const blockTags = codes.length
       ? codes.map(code => `<span class="block-tag">${escHtml(code)}</span>`).join('')
       : '—';
+    const extraClass = i >= PREVIEW_COUNT ? ' class="hist-extra"' : '';
     return `
-      <tr>
+      <tr${extraClass}>
         <td>${fmtDate(r.data)}</td>
         <td>${escHtml(r.nome) || '—'}</td>
         <td><span class="count-badge">${n}</span></td>
@@ -460,6 +528,16 @@ function render(records) {
       </tr>
     `;
   }).join('');
+
+  histExtraCount = Math.max(0, records.length - PREVIEW_COUNT);
+  if (histExtraCount > 0) {
+    toggleRow.style.display = '';
+    updateHistToggleLabel();
+  } else {
+    toggleRow.style.display = 'none';
+    histExpanded = false;
+    table.classList.remove('expanded');
+  }
 
   table.style.display = 'table';
 }
@@ -548,14 +626,26 @@ if (FIREBASE_CONFIG) {
       console.error(err);
       loadMapStateFromLocalStorage();
     });
+
+    titleRef = firebase.database().ref('titulo');
+    titleRef.on('value', snap => {
+      const val = snap.val() || '';
+      // Não sobrescreve enquanto o admin está digitando
+      if (document.activeElement !== titleInput) titleInput.value = val;
+    }, err => {
+      console.error(err);
+      try { titleInput.value = localStorage.getItem(TITLE_STORE) || ''; } catch (_) {}
+    });
   } catch (e) {
     console.error(e);
     loadFromLocalStorage();
     loadMapStateFromLocalStorage();
+    try { titleInput.value = localStorage.getItem(TITLE_STORE) || ''; } catch (_) {}
   }
 } else {
   loadFromLocalStorage();
   loadMapStateFromLocalStorage();
+  try { titleInput.value = localStorage.getItem(TITLE_STORE) || ''; } catch (_) {}
 }
 </script>
 </body>

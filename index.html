@@ -477,6 +477,9 @@ const STORE = 'mapa-territorios-v1';
 let state = { visited: {}, names: {} };
 let firebaseRef = null;
 let firebaseVisitasRef = null;
+// Título opcional (campanhas especiais), definido no admin.html e desenhado
+// acima do mapa nas imagens exportadas (ver drawTitleBanner mais abaixo).
+let mapTitle = '';
 
 function migrateState(s) {
   if (!s.names)   s.names   = {};
@@ -515,6 +518,7 @@ function initFirebase() {
     const db  = firebase.database();
     firebaseRef = db.ref('estado');
     firebaseVisitasRef = db.ref('visitas');
+    db.ref('titulo').on('value', snap => { mapTitle = snap.val() || ''; });
 
     // Escuta mudanças em tempo real
     firebaseRef.on('value', snap => {
@@ -1150,6 +1154,55 @@ async function preloadExportMap() {
   } catch (_) {}
 }
 
+// ─────────────────────────────────────────────
+//  Faixa de título opcional (campanhas especiais) desenhada acima do
+//  mapa nas imagens exportadas. Definida no admin.html, salva em
+//  Firebase 'titulo' e sincronizada em mapTitle (ver initFirebase).
+// ─────────────────────────────────────────────
+function wrapCanvasText(ctx, text, maxWidth) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+function measureTitleBanner(title, cw) {
+  if (!title || !title.trim()) return { lines: [], bannerH: 0, fontPx: 0, lineHeight: 0 };
+  const tmp = document.createElement('canvas').getContext('2d');
+  const fontPx = 56;
+  tmp.font = `700 ${fontPx}px system-ui, sans-serif`;
+  const lines = wrapCanvasText(tmp, title.trim(), cw - 80).slice(0, 3);
+  const lineHeight = Math.round(fontPx * 1.25);
+  const bannerH = 40 + lines.length * lineHeight + 26;
+  return { lines, bannerH, fontPx, lineHeight };
+}
+function drawTitleBanner(ctx, cw, meta) {
+  const { lines, bannerH, fontPx, lineHeight } = meta;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cw, bannerH);
+  ctx.fillStyle = '#1e293b';
+  ctx.font = `700 ${fontPx}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  let y = 40 + Math.round(fontPx * 0.85);
+  for (const line of lines) {
+    ctx.fillText(line, cw / 2, y);
+    y += lineHeight;
+  }
+  ctx.textAlign = 'left';
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(40, bannerH - 14); ctx.lineTo(cw - 40, bannerH - 14); ctx.stroke();
+}
+
 async function buildExportBlob() {
   if (!mapaCompletoText) {
     const res = await fetch('./Mapa/MapaCompleto.svg');
@@ -1192,15 +1245,18 @@ async function buildExportBlob() {
   img.src = url;
   await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
 
+  const titleMeta = measureTitleBanner(mapTitle, cw);
+
   const canvas = document.createElement('canvas');
   canvas.width  = cw;
-  canvas.height = ch;
+  canvas.height = ch + titleMeta.bannerH;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, cw, ch);
-  ctx.drawImage(img, 0, 0, cw, ch);
+  ctx.fillRect(0, 0, cw, ch + titleMeta.bannerH);
+  if (titleMeta.bannerH) drawTitleBanner(ctx, cw, titleMeta);
+  ctx.drawImage(img, 0, titleMeta.bannerH, cw, ch);
   URL.revokeObjectURL(url);
 
   return await new Promise(res => canvas.toBlob(res, 'image/png'));
@@ -1265,23 +1321,27 @@ async function buildTerritoryExportBlob(t) {
   const pct  = total ? Math.round((done / total) * 100) : 0;
   const name = state.names[t.id] || t.name;
   const fpad = 40, footerH = 200;
+  const titleMeta  = measureTitleBanner(mapTitle, cw);
+  const topOffset  = titleMeta.bannerH;
+  const mapBottom  = topOffset + ch;
 
   const canvas = document.createElement('canvas');
   canvas.width  = cw;
-  canvas.height = ch + footerH;
+  canvas.height = mapBottom + footerH;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, cw, ch + footerH);
-  ctx.drawImage(img, 0, 0, cw, ch);
+  ctx.fillRect(0, 0, cw, mapBottom + footerH);
+  if (topOffset) drawTitleBanner(ctx, cw, titleMeta);
+  ctx.drawImage(img, 0, topOffset, cw, ch);
   URL.revokeObjectURL(url);
 
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(fpad, ch + 26); ctx.lineTo(cw - fpad, ch + 26); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(fpad, mapBottom + 26); ctx.lineTo(cw - fpad, mapBottom + 26); ctx.stroke();
 
-  const rowY = ch + 66;
+  const rowY = mapBottom + 66;
   ctx.fillStyle = t.color;
   ctx.beginPath(); ctx.arc(fpad + 16, rowY - 10, 16, 0, Math.PI * 2); ctx.fill();
 
@@ -1295,7 +1355,7 @@ async function buildTerritoryExportBlob(t) {
   ctx.fillText(pct + '%', cw - fpad, rowY);
   ctx.textAlign = 'left';
 
-  const barY = ch + 96, barH = 18, barW = cw - fpad * 2;
+  const barY = mapBottom + 96, barH = 18, barW = cw - fpad * 2;
   ctx.fillStyle = '#f1f5f9';
   roundRect(ctx, fpad, barY, barW, barH, 9); ctx.fill();
   if (pct > 0) {
