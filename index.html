@@ -248,6 +248,15 @@
     .map-card-item-name { font-size: 0.85rem; font-weight: 600; color: var(--text-1); }
     .map-card-item a { display: block; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
     .map-card-item img { display: block; width: 100%; height: auto; }
+    .btn-share-territory {
+      width: 100%; margin-top: 8px; padding: 8px;
+      font-size: 0.76rem; font-weight: 600;
+      color: var(--spinner-fill); background: transparent;
+      border: 1.5px solid var(--spinner-fill); border-radius: 8px;
+      cursor: pointer; transition: all .15s;
+    }
+    .btn-share-territory:hover { background: var(--spinner-fill); color: #fff; }
+    .btn-share-territory:disabled { opacity: .6; cursor: default; }
 
     /* Card */
     .t-card {
@@ -1099,6 +1108,7 @@ function renderMapsList() {
           <img src="./Imgs/${t.id}.png" alt="Mapa detalhado — ${escHtml(name)}">
         </picture>
       </a>
+      <button class="btn-share-territory" data-layer="${t.id}">📤 Compartilhar mapa de ${escHtml(name)}</button>
     `;
     list.appendChild(item);
   }
@@ -1195,6 +1205,107 @@ async function buildExportBlob() {
 
   return await new Promise(res => canvas.toBlob(res, 'image/png'));
 }
+
+// Recorta do MapaCompleto.svg só o grupo de UM território (ex: "layer1"),
+// que já contém suas quadras + nomes de rua + comércios, e pinta de cinza
+// as quadras marcadas — igual ao mapa completo, mas isolado num PNG menor.
+async function buildTerritoryExportBlob(t) {
+  if (!mapaCompletoText) {
+    const res = await fetch('./Mapa/MapaCompleto.svg');
+    mapaCompletoText = await res.text();
+  }
+  const doc = new DOMParser().parseFromString(mapaCompletoText, 'image/svg+xml');
+  const svg = doc.querySelector('svg');
+  const group = doc.getElementById(t.id);
+  if (!group) throw new Error(`Grupo "${t.id}" não encontrado no SVG`);
+
+  // Esconde os outros territórios pra não vazar rua/quadra vizinha na borda
+  TERRITORIES.forEach(other => {
+    if (other.id === t.id) return;
+    const g = doc.getElementById(other.id);
+    if (g) g.style.display = 'none';
+  });
+
+  // Pinta de cinza as quadras marcadas (mesmos ids em todo o documento)
+  Object.keys(state.visited).forEach(id => {
+    if (!state.visited[id]) return;
+    fragmentsOf(id).forEach(realId => {
+      const p = doc.getElementById(realId);
+      if (p) { p.style.fill = '#7a7a7a'; p.style.fillOpacity = '1'; }
+    });
+  });
+
+  // Mede o grupo alvo: precisa estar anexado ao documento vivo pra getBBox()
+  // funcionar. Fica fora da tela, sem afetar o layout da página.
+  svg.style.cssText = 'position:fixed; left:-99999px; top:0;';
+  document.body.appendChild(svg);
+  const bbox = group.getBBox();
+  document.body.removeChild(svg);
+
+  const pad = Math.max(bbox.width, bbox.height) * 0.05;
+  const vx = bbox.x - pad, vy = bbox.y - pad;
+  const vw = bbox.width + pad * 2, vh = bbox.height + pad * 2;
+  svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+
+  const MAX_DIM = 2200;
+  const scale = MAX_DIM / Math.max(vw, vh);
+  const cw = Math.round(vw * scale), ch = Math.round(vh * scale);
+  svg.setAttribute('width',  cw);
+  svg.setAttribute('height', ch);
+  svg.removeAttribute('style');
+
+  const xml = new XMLSerializer().serializeToString(svg);
+  const url = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+  const img = new Image();
+  img.src = url;
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.drawImage(img, 0, 0, cw, ch);
+  URL.revokeObjectURL(url);
+
+  return await new Promise(res => canvas.toBlob(res, 'image/png'));
+}
+
+document.getElementById('maps-list').addEventListener('click', async e => {
+  const btn = e.target.closest('.btn-share-territory');
+  if (!btn) return;
+  const t = TERRITORIES.find(x => x.id === btn.dataset.layer);
+  if (!t) return;
+  const name = state.names[t.id] || t.name;
+  const orig = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = '⏳ Gerando imagem...';
+  try {
+    const blob = await buildTerritoryExportBlob(t);
+    const file = new File([blob], `mapa-${t.id}.png`, { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+    } else {
+      const a = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      a.download = `mapa-${name}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error(err);
+      alert('Não foi possível compartilhar esse mapa.');
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = orig;
+  }
+});
 
 document.getElementById('btn-share-map').addEventListener('click', async () => {
   const btn  = document.getElementById('btn-share-map');
