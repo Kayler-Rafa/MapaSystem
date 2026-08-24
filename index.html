@@ -238,7 +238,11 @@
     #territory-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
     /* Lista (Mapas) */
-    #maps-list { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+    /* display:flex só entra combinado com .active — um seletor de ID puro
+       (#maps-list{display:flex}) teria especificidade maior que .tab-panel
+       {display:none} e ficaria sempre visível, mesmo com a aba fechada. */
+    #maps-list { padding: 12px; flex-direction: column; gap: 14px; }
+    #maps-list.active { display: flex; }
     .map-card-item { display: block; }
     .map-card-item-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .map-card-item-name { font-size: 0.85rem; font-weight: 600; color: var(--text-1); }
