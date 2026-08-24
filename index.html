@@ -1260,16 +1260,52 @@ async function buildTerritoryExportBlob(t) {
   img.src = url;
   await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
 
+  // Faixa de progresso abaixo do mapa (mesmo território, cor, % e barra)
+  const { done, total } = countBlocks(t);
+  const pct  = total ? Math.round((done / total) * 100) : 0;
+  const name = state.names[t.id] || t.name;
+  const fpad = 40, footerH = 200;
+
   const canvas = document.createElement('canvas');
   canvas.width  = cw;
-  canvas.height = ch;
+  canvas.height = ch + footerH;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, cw, ch);
+  ctx.fillRect(0, 0, cw, ch + footerH);
   ctx.drawImage(img, 0, 0, cw, ch);
   URL.revokeObjectURL(url);
+
+  ctx.strokeStyle = '#e2e8f0';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(fpad, ch + 26); ctx.lineTo(cw - fpad, ch + 26); ctx.stroke();
+
+  const rowY = ch + 66;
+  ctx.fillStyle = t.color;
+  ctx.beginPath(); ctx.arc(fpad + 16, rowY - 10, 16, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = '#1e293b';
+  ctx.font = '700 40px system-ui, sans-serif';
+  ctx.fillText(name, fpad + 44, rowY);
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = '600 32px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(pct + '%', cw - fpad, rowY);
+  ctx.textAlign = 'left';
+
+  const barY = ch + 96, barH = 18, barW = cw - fpad * 2;
+  ctx.fillStyle = '#f1f5f9';
+  roundRect(ctx, fpad, barY, barW, barH, 9); ctx.fill();
+  if (pct > 0) {
+    ctx.fillStyle = t.color;
+    roundRect(ctx, fpad, barY, Math.max(barH, barW * pct / 100), barH, 9); ctx.fill();
+  }
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '400 26px system-ui, sans-serif';
+  ctx.fillText(`${done} de ${total} quadras trabalhadas`, fpad, barY + 56);
 
   return await new Promise(res => canvas.toBlob(res, 'image/png'));
 }
