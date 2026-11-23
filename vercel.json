@@ -1,9 +1,7 @@
 {
   "outputDirectory": ".",
-  "redirects": [
-    { "source": "/((?!C\\.png$|manutencao\\.html$).*)", "destination": "/manutencao.html", "permanent": false }
-  ],
   "headers": [
-    { "source": "/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
+    { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-store" }] },
+    { "source": "/(.*)\\.html", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
   ]
 }

@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#111111">
+<title>Painel de Sistemas</title>
+<link rel="icon" href="/C.png">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{--bg:#111;--card:#1a1a1a;--line:#2a2a2a;--fg:#f0f0f0;--muted:#999;--amber:#f5b400;--green:#22c55e;--red:#ef4444}
+  body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;padding:28px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left))}
+  .wrap{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+  header{margin-bottom:6px}
+  .tag{display:inline-block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);border:1px solid #f5b40055;padding:4px 10px;border-radius:999px;margin-bottom:12px}
+  h1{font-size:24px}
+  .sub{color:var(--muted);font-size:14px;margin-top:6px;line-height:1.5}
+  .senha{display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .senha label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .senha input{background:#0c0c0c;border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:12px;font-size:16px;outline:none}
+  .senha input:focus{border-color:var(--amber)}
+  .proj{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+  .linha{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .nome{font-size:17px;font-weight:700}
+  .url{font-size:12px;color:var(--muted);word-break:break-all}
+  .status{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;white-space:nowrap}
+  .status::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--muted)}
+  .status.on{color:var(--green)}.status.on::before{background:var(--green)}
+  .status.off{color:var(--amber)}.status.off::before{background:var(--amber)}
+  button{font:inherit;font-weight:700;font-size:15px;border-radius:10px;padding:13px;cursor:pointer;border:1px solid var(--line);background:#222;color:var(--fg);width:100%}
+  button:disabled{opacity:.5;cursor:default}
+  button.desligar{border-color:#f5b40066;color:var(--amber)}
+  button.ligar{border-color:#22c55e66;color:var(--green)}
+  .confirma{display:flex;gap:8px}
+  .confirma button.sim{background:var(--amber);color:#111;border-color:var(--amber)}
+  .msg{font-size:13px;min-height:18px}
+  .msg.erro{color:var(--red)}.msg.ok{color:var(--green)}
+  .rodape{text-align:center;color:#666;font-size:12px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="tag">Controle</span>
+    <h1>Painel de Sistemas</h1>
+    <p class="sub">Liga e desliga a tela de manutenção de cada projeto. A mudança vale na hora, sem deploy.</p>
+  </header>
+
+  <div class="senha">
+    <label for="senha">Senha</label>
+    <input id="senha" type="password" autocomplete="current-password" placeholder="Digite a senha do painel">
+  </div>
+
+  <div id="lista"></div>
+  <p class="rodape">Atualiza sozinho a cada 15 segundos</p>
+</div>
+
+<script>
+const BASE = 'https://mapa-a4630-default-rtdb.firebaseio.com/controle';
+const PROJETOS = [
+  { id: 'mapa',   nome: 'Mapa de Territórios',    url: 'https://mapa-system.vercel.app' },
+  { id: 'quadro', nome: 'Quadro de Designações',  url: 'https://quadro-designacoes.vercel.app' },
+];
+
+const senhaEl = document.getElementById('senha');
+try { senhaEl.value = localStorage.getItem('painel-senha') || ''; } catch (_) {}
+senhaEl.addEventListener('change', () => { try { localStorage.setItem('painel-senha', senhaEl.value); } catch (_) {} });
+
+const estado = {};      // id -> true (fora do ar) | false (no ar) | null (desconhecido)
+const confirmando = {}; // id -> true enquanto pede confirmação
+
+const lista = document.getElementById('lista');
+lista.style.cssText = 'display:flex;flex-direction:column;gap:14px';
+
+function render() {
+  lista.innerHTML = '';
+  for (const p of PROJETOS) {
+    const off = estado[p.id];
+    const card = document.createElement('div');
+    card.className = 'proj';
+    const statusTxt = off === true ? 'Em manutenção' : off === false ? 'No ar' : 'Verificando…';
+    const statusCls = off === true ? 'off' : off === false ? 'on' : '';
+    card.innerHTML = `
+      <div class="linha">
+        <div><div class="nome"></div><div class="url"></div></div>
+        <span class="status ${statusCls}"></span>
+      </div>
+      <div class="acoes"></div>
+      <div class="msg" id="msg-${p.id}"></div>`;
+    card.querySelector('.nome').textContent = p.nome;
+    card.querySelector('.url').textContent = p.url.replace('https://', '');
+    card.querySelector('.status').textContent = statusTxt;
+
+    const acoes = card.querySelector('.acoes');
+    if (confirmando[p.id]) {
+      const acao = off ? 'Colocar no ar' : 'Tirar do ar';
+      acoes.innerHTML = `<div class="confirma"><button class="nao">Cancelar</button><button class="sim">Sim, ${acao.toLowerCase()}</button></div>`;
+      acoes.querySelector('.nao').onclick = () => { confirmando[p.id] = false; render(); };
+      acoes.querySelector('.sim').onclick = () => alternar(p, !off);
+    } else {
+      const btn = document.createElement('button');
+      btn.disabled = off == null;
+      btn.className = off ? 'ligar' : 'desligar';
+      btn.textContent = off ? 'Colocar no ar' : 'Tirar do ar';
+      btn.onclick = () => { confirmando[p.id] = true; render(); };
+      acoes.appendChild(btn);
+    }
+    lista.appendChild(card);
+  }
+}
+
+async function carregar() {
+  await Promise.all(PROJETOS.map(async p => {
+    try {
+      const r = await fetch(`${BASE}/${p.id}/off.json`, { cache: 'no-store' });
+      const v = await r.json();
+      estado[p.id] = v === true;
+    } catch (_) { estado[p.id] = null; }
+  }));
+  if (!Object.values(confirmando).some(Boolean)) render();
+}
+
+async function alternar(p, novoOff) {
+  const senha = senhaEl.value.trim();
+  const msg = () => document.getElementById('msg-' + p.id);
+  if (!senha) { confirmando[p.id] = false; render(); msg().className = 'msg erro'; msg().textContent = 'Digite a senha primeiro.'; senhaEl.focus(); return; }
+  try {
+    const r = await fetch(`${BASE}/${p.id}.json`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ off: novoOff, em: Date.now(), senha }),
+    });
+    confirmando[p.id] = false;
+    if (!r.ok) {
+      render();
+      msg().className = 'msg erro';
+      msg().textContent = r.status === 401 ? 'Senha incorreta.' : 'Não foi possível salvar. Tente de novo.';
+      return;
+    }
+    try { localStorage.setItem('painel-senha', senha); } catch (_) {}
+    estado[p.id] = novoOff;
+    render();
+    msg().className = 'msg ok';
+    msg().textContent = novoOff ? 'Fora do ar. Tela de manutenção ativa.' : 'No ar novamente.';
+  } catch (_) {
+    confirmando[p.id] = false; render();
+    msg().className = 'msg erro'; msg().textContent = 'Sem conexão. Tente de novo.';
+  }
+}
+
+render();
+carregar();
+setInterval(carregar, 15000);
+</script>
+</body>
+</html>
