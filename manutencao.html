@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Sistema em manutenção</title>
+<link rel="icon" type="image/png" href="/C.png">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #dde2e8; color: #1e293b; padding: 24px;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  .card {
+    background: #fff; border-radius: 20px; box-shadow: 0 8px 40px rgba(0,0,0,.10);
+    padding: 40px 28px; max-width: 420px; width: 100%; text-align: center;
+  }
+  .blocks { display: grid; grid-template-columns: repeat(3, 34px); gap: 6px; justify-content: center; margin-bottom: 26px; }
+  .blocks span { height: 34px; border-radius: 7px; animation: pulse 2.4s ease-in-out infinite; }
+  .blocks span:nth-child(1) { background: #9966cc; }
+  .blocks span:nth-child(2) { background: #08beee; animation-delay: .2s; }
+  .blocks span:nth-child(3) { background: #d4a26a; animation-delay: .4s; }
+  .blocks span:nth-child(4) { background: #d1b632; animation-delay: .6s; }
+  .blocks span:nth-child(5) { background: #7a7a7a; animation-delay: .8s; }
+  .blocks span:nth-child(6) { background: #c93d33; animation-delay: 1s; }
+  .blocks span:nth-child(7) { background: #0fad37; animation-delay: 1.2s; }
+  .blocks span:nth-child(8) { background: #7a7a7a; animation-delay: 1.4s; }
+  .blocks span:nth-child(9) { background: #9966cc; animation-delay: 1.6s; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .blocks span { animation: none; } }
+  h1 { font-size: 1.35rem; margin-bottom: 10px; }
+  p { font-size: .92rem; color: #64748b; line-height: 1.6; }
+  .tag {
+    display: inline-block; margin-top: 22px; padding: 6px 14px; border-radius: 999px;
+    background: #eff6ff; color: #2563eb; font-size: .78rem; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="blocks" aria-hidden="true">
+      <span></span><span></span><span></span>
+      <span></span><span></span><span></span>
+      <span></span><span></span><span></span>
+    </div>
+    <h1>Mapa de Territórios em manutenção</h1>
+    <p>O sistema está temporariamente fora do ar para ajustes. Nenhum dado foi perdido — as quadras marcadas continuam salvas.</p>
+    <p style="margin-top:10px">Tente novamente mais tarde.</p>
+    <span class="tag">Voltamos em breve</span>
+  </main>
+</body>
+</html>
