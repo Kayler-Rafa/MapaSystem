@@ -1,7 +1,7 @@
 {
   "outputDirectory": ".",
-  "rewrites": [
-    { "source": "/((?!C\\.png$|manutencao\\.html$).*)", "destination": "/manutencao.html" }
+  "redirects": [
+    { "source": "/((?!C\\.png$|manutencao\\.html$).*)", "destination": "/manutencao.html", "permanent": false }
   ],
   "headers": [
     { "source": "/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
