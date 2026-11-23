@@ -2,154 +2,215 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#111111">
+<meta name="theme-color" content="#0e0f11">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Painel">
 <title>Painel de Sistemas</title>
-<link rel="icon" href="/C.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-painel-32.png">
+<link rel="apple-touch-icon" href="/icons/icon-painel-180.png">
+<link rel="manifest" href="/painel.webmanifest">
 <style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  :root{--bg:#111;--card:#1a1a1a;--line:#2a2a2a;--fg:#f0f0f0;--muted:#999;--amber:#f5b400;--green:#22c55e;--red:#ef4444}
-  body{font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--fg);min-height:100vh;padding:28px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left))}
-  .wrap{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
-  header{margin-bottom:6px}
-  .tag{display:inline-block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);border:1px solid #f5b40055;padding:4px 10px;border-radius:999px;margin-bottom:12px}
-  h1{font-size:24px}
-  .sub{color:var(--muted);font-size:14px;margin-top:6px;line-height:1.5}
-  .senha{display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
-  .senha label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-  .senha input{background:#0c0c0c;border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:12px;font-size:16px;outline:none}
-  .senha input:focus{border-color:var(--amber)}
-  .proj{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
-  .linha{display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .nome{font-size:17px;font-weight:700}
-  .url{font-size:12px;color:var(--muted);word-break:break-all}
-  .status{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;white-space:nowrap}
-  .status::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--muted)}
-  .status.on{color:var(--green)}.status.on::before{background:var(--green)}
-  .status.off{color:var(--amber)}.status.off::before{background:var(--amber)}
-  button{font:inherit;font-weight:700;font-size:15px;border-radius:10px;padding:13px;cursor:pointer;border:1px solid var(--line);background:#222;color:var(--fg);width:100%}
-  button:disabled{opacity:.5;cursor:default}
-  button.desligar{border-color:#f5b40066;color:var(--amber)}
-  button.ligar{border-color:#22c55e66;color:var(--green)}
-  .confirma{display:flex;gap:8px}
-  .confirma button.sim{background:var(--amber);color:#111;border-color:var(--amber)}
-  .msg{font-size:13px;min-height:18px}
-  .msg.erro{color:var(--red)}.msg.ok{color:var(--green)}
-  .rodape{text-align:center;color:#666;font-size:12px;margin-top:10px}
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#0e0f11; --plate:#1b1d21; --plate-edge:#2a2d33; --fg:#eceef1; --muted:#8b9099;
+    --amber:#f5b400; --red:#d42a2a; --red-hi:#ff4d4d; --red-lo:#8f1414;
+    --green:#1f9d4c; --green-hi:#3ddc78; --green-lo:#0f5c2b;
+  }
+  body{
+    font-family:"Arial Narrow",Arial,Helvetica,sans-serif;background:var(--bg);color:var(--fg);
+    min-height:100vh;padding:calc(24px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+    background-image:radial-gradient(circle at 50% -10%,#1d2026 0,transparent 60%);
+  }
+  .wrap{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  header{display:flex;align-items:center;gap:12px}
+  header img{width:44px;height:44px;border-radius:11px}
+  h1{font-size:22px;letter-spacing:.02em}
+  .sub{color:var(--muted);font-size:13px;margin-top:2px}
+
+  .senha{display:flex;align-items:center;gap:10px;background:var(--plate);border:1px solid var(--plate-edge);border-radius:12px;padding:10px 14px}
+  .senha label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.14em;white-space:nowrap}
+  .senha input{flex:1;min-width:0;background:transparent;border:none;color:var(--fg);font-size:20px;letter-spacing:.4em;outline:none;font-family:inherit}
+
+  /* Caixa de controle de cada projeto */
+  .caixa{
+    background:linear-gradient(#202328,#17191d);border:1px solid var(--plate-edge);border-radius:18px;
+    padding:18px 18px 22px;display:flex;flex-direction:column;align-items:center;gap:16px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.05);position:relative;
+  }
+  .parafuso{position:absolute;width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#6b7078,#2b2e33);}
+  .parafuso::after{content:"";position:absolute;left:2px;right:2px;top:4px;height:2px;background:#1a1c20;transform:rotate(35deg)}
+  .p1{top:10px;left:10px}.p2{top:10px;right:10px}.p3{bottom:10px;left:10px}.p4{bottom:10px;right:10px}
+  .placa{position:relative;z-index:3;width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 10px}
+  .nome{font-size:17px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .url{font-size:11px;color:var(--muted);letter-spacing:.04em}
+  .led{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;color:var(--muted)}
+  .led i{width:11px;height:11px;border-radius:50%;background:#3a3d43;box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
+  .led.on{color:var(--green-hi)}.led.on i{background:var(--green-hi);box-shadow:0 0 10px var(--green-hi)}
+  .led.off{color:var(--amber)}.led.off i{background:var(--amber);box-shadow:0 0 10px var(--amber);animation:pisca 1.4s infinite}
+  @keyframes pisca{50%{opacity:.35}}
+
+  /* Base listrada + botão + tampa */
+  .base{
+    --tam:190px;width:var(--tam);height:var(--tam);border-radius:50%;position:relative;
+    background:repeating-linear-gradient(45deg,var(--amber) 0 14px,#111 14px 28px);
+    display:flex;align-items:center;justify-content:center;perspective:700px;
+    box-shadow:0 6px 18px rgba(0,0,0,.6);
+  }
+  .anel{width:82%;height:82%;border-radius:50%;background:#15171a;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 4px 10px rgba(0,0,0,.8)}
+  .botao{
+    width:84%;height:84%;border-radius:50%;border:none;cursor:pointer;position:relative;
+    background:radial-gradient(circle at 38% 30%,var(--hi) 0,var(--cor) 45%,var(--lo) 100%);
+    box-shadow:0 10px 0 var(--lo),0 14px 20px rgba(0,0,0,.6),inset 0 -6px 12px rgba(0,0,0,.35);
+    transform:translateY(-6px);transition:transform .08s,box-shadow .08s;
+    color:#fff;font-family:inherit;font-weight:700;letter-spacing:.14em;font-size:14px;text-shadow:0 1px 2px rgba(0,0,0,.5);
+  }
+  .botao.vermelho{--cor:var(--red);--hi:var(--red-hi);--lo:var(--red-lo)}
+  .botao.verde{--cor:var(--green);--hi:var(--green-hi);--lo:var(--green-lo)}
+  .botao:active,.botao.apertado{transform:translateY(4px);box-shadow:0 0 0 var(--lo),0 4px 8px rgba(0,0,0,.6),inset 0 -4px 10px rgba(0,0,0,.4)}
+  .botao:disabled{cursor:default}
+  .botao svg{display:block;margin:0 auto 4px;width:34px;height:34px}
+
+  .tampa{
+    position:absolute;inset:-4%;border-radius:50%;cursor:pointer;z-index:2;
+    background:linear-gradient(160deg,rgba(255,255,255,.32),rgba(255,255,255,.08) 45%,rgba(255,255,255,.18));
+    border:2px solid rgba(255,255,255,.35);
+    box-shadow:inset 0 0 18px rgba(255,255,255,.15),0 8px 18px rgba(0,0,0,.35);
+    backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px);
+    transform-origin:50% 0;transition:transform .45s cubic-bezier(.3,1.4,.5,1);
+    display:flex;align-items:flex-end;justify-content:center;padding-bottom:14px;
+  }
+  .tampa::before{content:"";position:absolute;top:-10px;left:35%;right:35%;height:14px;border-radius:5px;background:linear-gradient(#5a5f67,#2c2f34)} /* dobradiça */
+  .tampa span{font-size:10px;letter-spacing:.18em;font-weight:700;color:rgba(255,255,255,.85);background:rgba(0,0,0,.35);padding:3px 8px;border-radius:4px}
+  .base.aberta .tampa{transform:rotateX(-112deg)}
+  .base.aberta .tampa span{opacity:0}
+
+  .dica{font-size:12px;color:var(--muted);letter-spacing:.06em;text-align:center;min-height:16px}
+  .dica.erro{color:var(--red-hi)}.dica.ok{color:var(--green-hi)}
+  .rodape{text-align:center;color:#555a62;font-size:11px;letter-spacing:.08em}
+  @media (prefers-reduced-motion:reduce){.tampa{transition:none}.led.off i{animation:none}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <span class="tag">Controle</span>
-    <h1>Painel de Sistemas</h1>
-    <p class="sub">Liga e desliga a tela de manutenção de cada projeto. A mudança vale na hora, sem deploy.</p>
+    <img src="/icons/icon-painel-180.png" alt="">
+    <div><h1>Painel de Sistemas</h1><p class="sub">Levante a tampa e aperte para trocar o estado</p></div>
   </header>
 
   <div class="senha">
     <label for="senha">Senha</label>
-    <input id="senha" type="password" autocomplete="current-password" placeholder="Digite a senha do painel">
+    <input id="senha" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••">
   </div>
 
-  <div id="lista"></div>
-  <p class="rodape">Atualiza sozinho a cada 15 segundos</p>
+  <div id="lista" style="display:flex;flex-direction:column;gap:18px"></div>
+  <p class="rodape">ATUALIZA A CADA 15 SEGUNDOS</p>
 </div>
 
 <script>
 const BASE = 'https://mapa-a4630-default-rtdb.firebaseio.com/controle';
 const PROJETOS = [
-  { id: 'mapa',   nome: 'Mapa de Territórios',    url: 'https://mapa-system.vercel.app' },
-  { id: 'quadro', nome: 'Quadro de Designações',  url: 'https://quadro-designacoes.vercel.app' },
+  { id: 'mapa',   nome: 'Mapa de Territórios',   url: 'mapa-system.vercel.app' },
+  { id: 'quadro', nome: 'Quadro de Designações', url: 'quadro-designacoes.vercel.app' },
 ];
+const ICONE_POWER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.2 6.8a8 8 0 1 0 11.6 0"/></svg>';
 
 const senhaEl = document.getElementById('senha');
 try { senhaEl.value = localStorage.getItem('painel-senha') || ''; } catch (_) {}
 senhaEl.addEventListener('change', () => { try { localStorage.setItem('painel-senha', senhaEl.value); } catch (_) {} });
 
-const estado = {};      // id -> true (fora do ar) | false (no ar) | null (desconhecido)
-const confirmando = {}; // id -> true enquanto pede confirmação
-
+const estado = {};   // id -> true (fora do ar) | false (no ar) | null
+const timers = {};
 const lista = document.getElementById('lista');
-lista.style.cssText = 'display:flex;flex-direction:column;gap:14px';
 
-function render() {
-  lista.innerHTML = '';
-  for (const p of PROJETOS) {
-    const off = estado[p.id];
-    const card = document.createElement('div');
-    card.className = 'proj';
-    const statusTxt = off === true ? 'Em manutenção' : off === false ? 'No ar' : 'Verificando…';
-    const statusCls = off === true ? 'off' : off === false ? 'on' : '';
-    card.innerHTML = `
-      <div class="linha">
-        <div><div class="nome"></div><div class="url"></div></div>
-        <span class="status ${statusCls}"></span>
-      </div>
-      <div class="acoes"></div>
-      <div class="msg" id="msg-${p.id}"></div>`;
-    card.querySelector('.nome').textContent = p.nome;
-    card.querySelector('.url').textContent = p.url.replace('https://', '');
-    card.querySelector('.status').textContent = statusTxt;
+for (const p of PROJETOS) {
+  const caixa = document.createElement('div');
+  caixa.className = 'caixa';
+  caixa.innerHTML = `
+    <i class="parafuso p1"></i><i class="parafuso p2"></i><i class="parafuso p3"></i><i class="parafuso p4"></i>
+    <div class="placa">
+      <div><div class="nome"></div><div class="url"></div></div>
+      <div class="led"><i></i><span>…</span></div>
+    </div>
+    <div class="base">
+      <div class="anel"><button class="botao vermelho" disabled></button></div>
+      <div class="tampa" role="button" aria-label="Levantar a tampa"><span>LEVANTE</span></div>
+    </div>
+    <div class="dica"></div>`;
+  caixa.querySelector('.nome').textContent = p.nome;
+  caixa.querySelector('.url').textContent = p.url;
+  p.el = caixa;
+  caixa.querySelector('.tampa').addEventListener('click', () => abrirTampa(p));
+  caixa.querySelector('.botao').addEventListener('click', () => apertar(p));
+  lista.appendChild(caixa);
+}
 
-    const acoes = card.querySelector('.acoes');
-    if (confirmando[p.id]) {
-      const acao = off ? 'Colocar no ar' : 'Tirar do ar';
-      acoes.innerHTML = `<div class="confirma"><button class="nao">Cancelar</button><button class="sim">Sim, ${acao.toLowerCase()}</button></div>`;
-      acoes.querySelector('.nao').onclick = () => { confirmando[p.id] = false; render(); };
-      acoes.querySelector('.sim').onclick = () => alternar(p, !off);
-    } else {
-      const btn = document.createElement('button');
-      btn.disabled = off == null;
-      btn.className = off ? 'ligar' : 'desligar';
-      btn.textContent = off ? 'Colocar no ar' : 'Tirar do ar';
-      btn.onclick = () => { confirmando[p.id] = true; render(); };
-      acoes.appendChild(btn);
-    }
-    lista.appendChild(card);
+function dica(p, txt, cls = '') { const d = p.el.querySelector('.dica'); d.textContent = txt; d.className = 'dica ' + cls; }
+
+function pintar(p) {
+  const off = estado[p.id];
+  const led = p.el.querySelector('.led');
+  led.className = 'led ' + (off === true ? 'off' : off === false ? 'on' : '');
+  led.querySelector('span').textContent = off === true ? 'Manutenção' : off === false ? 'No ar' : 'Sem sinal';
+  const b = p.el.querySelector('.botao');
+  b.className = 'botao ' + (off ? 'verde' : 'vermelho');
+  b.innerHTML = ICONE_POWER + (off ? 'RELIGAR' : 'DESLIGAR');
+  b.disabled = off == null || !p.el.querySelector('.base').classList.contains('aberta');
+}
+
+function abrirTampa(p) {
+  if (estado[p.id] == null) return;
+  const base = p.el.querySelector('.base');
+  base.classList.add('aberta');
+  pintar(p);
+  dica(p, estado[p.id] ? 'Aperte para colocar no ar' : 'Aperte para tirar do ar');
+  clearTimeout(timers[p.id]);
+  timers[p.id] = setTimeout(() => fecharTampa(p), 7000);
+}
+function fecharTampa(p) {
+  clearTimeout(timers[p.id]);
+  p.el.querySelector('.base').classList.remove('aberta');
+  pintar(p);
+}
+
+async function apertar(p) {
+  const base = p.el.querySelector('.base');
+  if (!base.classList.contains('aberta')) return;
+  clearTimeout(timers[p.id]);
+  const senha = senhaEl.value.trim();
+  if (!senha) { fecharTampa(p); dica(p, 'Digite a senha primeiro', 'erro'); senhaEl.focus(); return; }
+  const novoOff = !estado[p.id];
+  const b = p.el.querySelector('.botao');
+  b.classList.add('apertado'); b.disabled = true;
+  dica(p, 'Enviando…');
+  try {
+    const r = await fetch(`${BASE}/${p.id}.json`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ off: novoOff, em: Date.now(), senha }),
+    });
+    if (!r.ok) throw new Error(r.status === 401 ? 'Senha incorreta' : 'Não foi possível salvar');
+    try { localStorage.setItem('painel-senha', senha); } catch (_) {}
+    estado[p.id] = novoOff;
+    if (navigator.vibrate) navigator.vibrate(60);
+    dica(p, novoOff ? 'Fora do ar. Tela de manutenção ativa.' : 'No ar novamente.', 'ok');
+  } catch (e) {
+    dica(p, e.message === 'Senha incorreta' ? 'Senha incorreta' : 'Sem conexão. Tente de novo.', 'erro');
   }
+  setTimeout(() => { b.classList.remove('apertado'); fecharTampa(p); }, 350);
 }
 
 async function carregar() {
   await Promise.all(PROJETOS.map(async p => {
     try {
       const r = await fetch(`${BASE}/${p.id}/off.json`, { cache: 'no-store' });
-      const v = await r.json();
-      estado[p.id] = v === true;
+      estado[p.id] = (await r.json()) === true;
     } catch (_) { estado[p.id] = null; }
+    if (!p.el.querySelector('.base').classList.contains('aberta')) pintar(p);
   }));
-  if (!Object.values(confirmando).some(Boolean)) render();
 }
 
-async function alternar(p, novoOff) {
-  const senha = senhaEl.value.trim();
-  const msg = () => document.getElementById('msg-' + p.id);
-  if (!senha) { confirmando[p.id] = false; render(); msg().className = 'msg erro'; msg().textContent = 'Digite a senha primeiro.'; senhaEl.focus(); return; }
-  try {
-    const r = await fetch(`${BASE}/${p.id}.json`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ off: novoOff, em: Date.now(), senha }),
-    });
-    confirmando[p.id] = false;
-    if (!r.ok) {
-      render();
-      msg().className = 'msg erro';
-      msg().textContent = r.status === 401 ? 'Senha incorreta.' : 'Não foi possível salvar. Tente de novo.';
-      return;
-    }
-    try { localStorage.setItem('painel-senha', senha); } catch (_) {}
-    estado[p.id] = novoOff;
-    render();
-    msg().className = 'msg ok';
-    msg().textContent = novoOff ? 'Fora do ar. Tela de manutenção ativa.' : 'No ar novamente.';
-  } catch (_) {
-    confirmando[p.id] = false; render();
-    msg().className = 'msg erro'; msg().textContent = 'Sem conexão. Tente de novo.';
-  }
-}
-
-render();
+PROJETOS.forEach(pintar);
 carregar();
 setInterval(carregar, 15000);
 </script>

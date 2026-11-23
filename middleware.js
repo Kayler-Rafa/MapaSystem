@@ -4,8 +4,8 @@
 // o sistema fica no ar (falha aberta).
 
 export const config = {
-  // Ícone, a própria tela de manutenção, o 404 e o painel sempre passam.
-  matcher: '/((?!C\\.png$|manutencao\\.html$|404\\.html$|painel\\.html$).*)',
+  // Ícones, a própria tela de manutenção, o 404 e o painel sempre passam.
+  matcher: '/((?!icons/|C\\.png$|manutencao\\.html$|404\\.html$|painel\\.html$|painel\\.webmanifest$).*)',
 };
 
 const FLAG_URL = 'https://mapa-a4630-default-rtdb.firebaseio.com/controle/mapa/off.json';
